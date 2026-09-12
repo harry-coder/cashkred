@@ -171,7 +171,15 @@ app.post("/api/apply", async (req, res) => {
     const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim();
     const allowSelfSigned = (process.env.SMTP_ALLOW_SELF_SIGNED || "false").trim().toLowerCase() === "true";
     const smtpDebug = (process.env.SMTP_DEBUG || "false").trim().toLowerCase() === "true";
-    const notificationEmails = (process.env.NOTIFICATION_EMAIL || "applications@cashkred.com").split(",").map((emailAddress) => emailAddress.trim()).filter(Boolean);
+    const notificationEmails = (process.env.NOTIFICATION_EMAIL || "applications@cashkred.com").split(/[,;\n]+/).map((emailAddress) => emailAddress.trim()).filter(Boolean);
+    const invalidNotificationEmails = notificationEmails.filter(
+      (emailAddress) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress)
+    );
+    if (notificationEmails.length === 0 || invalidNotificationEmails.length > 0) {
+      throw new Error(
+        `Invalid NOTIFICATION_EMAIL value. Check these addresses: ${invalidNotificationEmails.join(", ") || "none provided"}`
+      );
+    }
     const isSmtpConfigured = !!(smtpHost && smtpUser && smtpPass);
     console.log(`SMTP Configured: ${isSmtpConfigured ? "Yes" : "No"}`);
     if (!isSmtpConfigured) {
@@ -234,9 +242,10 @@ app.post("/api/apply", async (req, res) => {
             }
           });
           await transporter.verify();
+          console.log(`[SMTP] Handshake successful. Sending email to ${notificationEmails.length} recipient(s).`);
           await transporter.sendMail({
             from: `"${fullName} via CashKred" <${smtpUser}>`,
-            to: notificationEmails,
+            to: notificationEmails.join(", "),
             subject: `\u{1F6A8} [New Application] - \u20B9${Number(loanAmount).toLocaleString("en-IN")} requested by ${fullName}`,
             html: emailHtml
           });

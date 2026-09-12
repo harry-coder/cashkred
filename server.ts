@@ -160,9 +160,18 @@ app.post("/api/apply", async (req, res) => {
     const allowSelfSigned = (process.env.SMTP_ALLOW_SELF_SIGNED || "false").trim().toLowerCase() === "true";
     const smtpDebug = (process.env.SMTP_DEBUG || "false").trim().toLowerCase() === "true";
     const notificationEmails = (process.env.NOTIFICATION_EMAIL || "applications@cashkred.com")
-      .split(",")
+      .split(/[,;\n]+/)
       .map((emailAddress) => emailAddress.trim())
       .filter(Boolean);
+    const invalidNotificationEmails = notificationEmails.filter(
+      (emailAddress) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress)
+    );
+
+    if (notificationEmails.length === 0 || invalidNotificationEmails.length > 0) {
+      throw new Error(
+        `Invalid NOTIFICATION_EMAIL value. Check these addresses: ${invalidNotificationEmails.join(", ") || "none provided"}`
+      );
+    }
 
     const isSmtpConfigured = !!(smtpHost && smtpUser && smtpPass);
     console.log(`SMTP Configured: ${isSmtpConfigured ? "Yes" : "No"}`);
@@ -235,9 +244,10 @@ app.post("/api/apply", async (req, res) => {
           // Verify SMTP handshake before sending to fail fast with better diagnostics.
           await transporter.verify();
 
+          console.log(`[SMTP] Handshake successful. Sending email to ${notificationEmails.length} recipient(s).`);
           await transporter.sendMail({
             from: `"${fullName} via CashKred" <${smtpUser}>`,
-            to: notificationEmails,
+            to: notificationEmails.join(", "),
             subject: `🚨 [New Application] - ₹${Number(loanAmount).toLocaleString('en-IN')} requested by ${fullName}`,
             html: emailHtml,
           });
