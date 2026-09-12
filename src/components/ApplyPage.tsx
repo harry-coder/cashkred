@@ -108,21 +108,6 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
       tempErrors.monthlyIncome = 'Net monthly income is required';
     }
 
-    if (!bankName.trim()) tempErrors.bankName = 'Bank Name is required';
-    if (!accountNumber.trim() || accountNumber.length < 9) {
-      tempErrors.accountNumber = 'Please enter a valid Bank Account Number';
-    }
-
-    // IFSC Code validation: 4 letters, 0, 6 alpha-numeric
-    const cleanIfsc = ifscCode.trim().toUpperCase();
-    if (!cleanIfsc || !cleanIfsc.match(/^[A-Z]{4}0[A-Z0-9]{6}$/)) {
-      tempErrors.ifscCode = 'Please enter a valid 11-digit IFSC code (e.g. HDFC0000240)';
-    }
-
-    if (!accountHolderName.trim()) {
-      tempErrors.accountHolderName = 'Account Holder Name is required';
-    }
-
     setErrors(tempErrors);
     return Object.keys(tempErrors).length === 0;
   };
