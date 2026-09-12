@@ -171,7 +171,7 @@ app.post("/api/apply", async (req, res) => {
     const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim();
     const allowSelfSigned = (process.env.SMTP_ALLOW_SELF_SIGNED || "false").trim().toLowerCase() === "true";
     const smtpDebug = (process.env.SMTP_DEBUG || "false").trim().toLowerCase() === "true";
-    const notificationEmail = (process.env.NOTIFICATION_EMAIL || "applications@cashkred.com").trim();
+    const notificationEmails = (process.env.NOTIFICATION_EMAIL || "applications@cashkred.com").split(",").map((emailAddress) => emailAddress.trim()).filter(Boolean);
     const isSmtpConfigured = !!(smtpHost && smtpUser && smtpPass);
     console.log(`SMTP Configured: ${isSmtpConfigured ? "Yes" : "No"}`);
     if (!isSmtpConfigured) {
@@ -236,7 +236,7 @@ app.post("/api/apply", async (req, res) => {
           await transporter.verify();
           await transporter.sendMail({
             from: `"${fullName} via CashKred" <${smtpUser}>`,
-            to: notificationEmail,
+            to: notificationEmails,
             subject: `\u{1F6A8} [New Application] - \u20B9${Number(loanAmount).toLocaleString("en-IN")} requested by ${fullName}`,
             html: emailHtml
           });
