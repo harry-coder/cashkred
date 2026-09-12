@@ -1,4 +1,5 @@
-import { Wallet, MapPin, Phone, Mail } from 'lucide-react';
+import { MapPin, Phone, Mail } from 'lucide-react';
+import logo from '../assets/logo.png';
 
 interface FooterProps {
   onPageChange: (page: string) => void;
@@ -10,16 +11,18 @@ export default function Footer({ onPageChange }: FooterProps) {
   return (
     <footer className="bg-slate-900 text-slate-400 pt-16 pb-12 font-sans border-t border-slate-800">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        
+
         {/* Upper Footer Grid */}
         <div className="grid gap-8 lg:grid-cols-12 mb-12">
-          
+
           {/* Column 1: Brand details */}
           <div className="lg:col-span-5 space-y-5">
-            <div className="flex items-center space-x-2 cursor-pointer" onClick={() => onPageChange('home')}>
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-600 text-white shadow-md">
-                <Wallet className="h-5 w-5" />
-              </div>
+            <div className="flex items-center space-x-3 cursor-pointer" onClick={() => onPageChange('home')}>
+              <img
+                src={logo}
+                alt="CashKred logo"
+                className="h-9 w-auto object-contain"
+              />
               <div className="flex items-center">
                 <span className="font-display text-lg font-extrabold tracking-tight text-white">Cash</span>
                 <span className="font-display text-lg font-extrabold tracking-tight text-brand-500">Kred</span>
@@ -37,7 +40,7 @@ export default function Footer({ onPageChange }: FooterProps) {
               </div>
               <div className="flex items-center space-x-2 text-slate-300">
                 <Phone className="h-4 w-4 text-brand-500 shrink-0" />
-                <span>+91 80 4000 0000 (Corporate desk)</span>
+                <span>9220109924 (Corporate desk)</span>
               </div>
               <div className="flex items-center space-x-2 text-slate-300">
                 <Mail className="h-4 w-4 text-brand-500 shrink-0" />
@@ -89,7 +92,7 @@ export default function Footer({ onPageChange }: FooterProps) {
               <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Repay via Bank IMPS</span>
               <span className="text-[10px] font-semibold text-teal-500 bg-teal-950/40 border border-teal-900/40 px-2 py-0.5 rounded-full">Automated</span>
             </div>
-            
+
             <div className="space-y-2.5 text-xs leading-normal">
               <div className="flex justify-between items-center text-slate-300">
                 <span>Bank Name</span>

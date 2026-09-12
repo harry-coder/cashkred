@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, X, ArrowRight, ShieldCheck } from 'lucide-react';
+import logo from '../assets/logo.png';
 
 interface HeaderProps {
   onPageChange: (page: string) => void;
@@ -31,16 +32,16 @@ export default function Header({
     <header className="sticky top-0 z-40 w-full border-b border-slate-100 bg-white/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Logo */}
-        <div 
-          className="flex cursor-pointer items-center space-x-2" 
+        <div
+          className="flex cursor-pointer items-center space-x-3"
           onClick={() => onPageChange('home')}
           id="logo-container"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-600 text-white shadow-lg shadow-brand-500/30">
-            <svg className="h-5.5 w-5.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-            </svg>
-          </div>
+          <img
+            src={logo}
+            alt="CashKred logo"
+            className="h-10 w-auto object-contain"
+          />
           <div>
             <div className="flex items-center">
               <span className="font-display text-xl font-extrabold tracking-tight text-slate-900">Cash</span>
@@ -56,9 +57,8 @@ export default function Header({
             <button
               key={item.id}
               onClick={() => handleNavClick(item.id)}
-              className={`text-sm font-medium transition-colors hover:text-brand-600 cursor-pointer ${
-                currentPage === item.id ? 'text-brand-600 font-semibold' : 'text-slate-600'
-              }`}
+              className={`text-sm font-medium transition-colors hover:text-brand-600 cursor-pointer ${currentPage === item.id ? 'text-brand-600 font-semibold' : 'text-slate-600'
+                }`}
               id={`nav-item-${item.id}`}
             >
               {item.name}
@@ -112,15 +112,14 @@ export default function Header({
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className={`block w-full rounded-lg px-3 py-2.5 text-left text-base font-medium transition cursor-pointer ${
-                    currentPage === item.id ? 'bg-brand-50 text-brand-600 font-bold' : 'text-slate-700 hover:bg-slate-50 hover:text-brand-600'
-                  }`}
+                  className={`block w-full rounded-lg px-3 py-2.5 text-left text-base font-medium transition cursor-pointer ${currentPage === item.id ? 'bg-brand-50 text-brand-600 font-bold' : 'text-slate-700 hover:bg-slate-50 hover:text-brand-600'
+                    }`}
                   id={`mobile-nav-item-${item.id}`}
                 >
                   {item.name}
                 </button>
               ))}
-              
+
               <div className="border-t border-slate-100 pt-4 pb-2">
                 <button
                   onClick={() => {

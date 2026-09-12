@@ -48,7 +48,7 @@ export default function ContactPage() {
   return (
     <div className="py-12 bg-slate-50 min-h-screen font-sans">
       <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-        
+
         {/* Page title */}
         <div className="text-center max-w-3xl mx-auto mb-16">
           <span className="inline-flex items-center gap-2 px-3 py-1 bg-brand-50 text-brand-700 rounded-full text-xs font-semibold uppercase tracking-wider mb-4">
@@ -63,12 +63,12 @@ export default function ContactPage() {
         </div>
 
         <div className="grid gap-8 md:grid-cols-12 items-stretch">
-          
+
           {/* Left: Contact Info */}
           <div className="md:col-span-5 flex flex-col justify-between space-y-6">
             <div className="bg-slate-900 text-white rounded-[32px] p-8 space-y-8 flex-1 flex flex-col justify-center relative overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-brand-600 rounded-full blur-3xl opacity-20 -z-10" />
-              
+
               <div className="space-y-2">
                 <h3 className="font-display text-xl font-bold">Contact Details</h3>
                 <p className="text-xs text-slate-400">Feel free to reach out to us during corporate working hours (9:00 AM - 6:00 PM, Monday - Friday).</p>
@@ -107,7 +107,7 @@ export default function ContactPage() {
                   </div>
                   <div className="space-y-1">
                     <h4 className="text-sm font-bold text-slate-200">Customer Helpline</h4>
-                    <p className="text-xs text-slate-400 font-mono">+91 80 4000 0000</p>
+                    <p className="text-xs text-slate-400 font-mono">9220109924</p>
                     <p className="text-[10px] text-slate-500 font-sans">Corporate helpline for grievance details</p>
                   </div>
                 </div>
@@ -122,7 +122,7 @@ export default function ContactPage() {
           {/* Right: Contact Form */}
           <div className="md:col-span-7">
             <div className="bg-white border border-slate-100 rounded-[32px] p-6 sm:p-8 shadow-xs h-full flex flex-col justify-center">
-              
+
               <AnimatePresence mode="wait">
                 {!submitted ? (
                   <motion.div

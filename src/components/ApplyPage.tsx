@@ -578,74 +578,76 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
               </div>
             </div>
 
-            {/* 4. Bank Account Details */}
-            <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xs space-y-4">
-              <div className="flex items-center space-x-2 border-b border-slate-50 pb-3">
-                <div className="h-7 w-7 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
-                  <Landmark className="h-4 w-4" />
+            {false && (
+              // 4. Bank Account Details (temporarily disabled)
+              <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xs space-y-4">
+                <div className="flex items-center space-x-2 border-b border-slate-50 pb-3">
+                  <div className="h-7 w-7 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
+                    <Landmark className="h-4 w-4" />
+                  </div>
+                  <h3 className="font-display font-bold text-slate-900 text-sm">Disbursal Bank Details</h3>
                 </div>
-                <h3 className="font-display font-bold text-slate-900 text-sm">Disbursal Bank Details</h3>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {/* Bank Name */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">Bank Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. HDFC Bank, ICICI, SBI"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      className={`w-full rounded-xl border px-4 py-2.5 text-sm transition focus:outline-hidden ${errors.bankName ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
+                        }`}
+                    />
+                    {errors.bankName && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.bankName}</p>}
+                  </div>
+
+                  {/* Account Number */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">Bank Account Number</label>
+                    <input
+                      type="password"
+                      placeholder="Enter your account number"
+                      value={accountNumber}
+                      onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
+                      className={`w-full rounded-xl border px-4 py-2.5 text-sm font-mono transition focus:outline-hidden ${errors.accountNumber ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
+                        }`}
+                    />
+                    {errors.accountNumber && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.accountNumber}</p>}
+                  </div>
+
+                  {/* IFSC Code */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">IFSC Code</label>
+                    <input
+                      type="text"
+                      maxLength={11}
+                      placeholder="e.g. HDFC0000240"
+                      value={ifscCode}
+                      onChange={(e) => setIfscCode(e.target.value)}
+                      className={`w-full rounded-xl border px-4 py-2.5 text-sm font-mono font-bold uppercase transition focus:outline-hidden ${errors.ifscCode ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
+                        }`}
+                    />
+                    {errors.ifscCode && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.ifscCode}</p>}
+                  </div>
+
+                  {/* Account Holder Name */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">Account Holder Name</label>
+                    <input
+                      type="text"
+                      placeholder="Name as registered with Bank"
+                      value={accountHolderName}
+                      onChange={(e) => setAccountHolderName(e.target.value)}
+                      className={`w-full rounded-xl border px-4 py-2.5 text-sm transition focus:outline-hidden ${errors.accountHolderName ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
+                        }`}
+                    />
+                    {errors.accountHolderName && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.accountHolderName}</p>}
+                  </div>
+                </div>
               </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                {/* Bank Name */}
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">Bank Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. HDFC Bank, ICICI, SBI"
-                    value={bankName}
-                    onChange={(e) => setBankName(e.target.value)}
-                    className={`w-full rounded-xl border px-4 py-2.5 text-sm transition focus:outline-hidden ${errors.bankName ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
-                      }`}
-                  />
-                  {errors.bankName && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.bankName}</p>}
-                </div>
-
-                {/* Account Number */}
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">Bank Account Number</label>
-                  <input
-                    type="password"
-                    placeholder="Enter your account number"
-                    value={accountNumber}
-                    onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ''))}
-                    className={`w-full rounded-xl border px-4 py-2.5 text-sm font-mono transition focus:outline-hidden ${errors.accountNumber ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
-                      }`}
-                  />
-                  {errors.accountNumber && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.accountNumber}</p>}
-                </div>
-
-                {/* IFSC Code */}
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">IFSC Code</label>
-                  <input
-                    type="text"
-                    maxLength={11}
-                    placeholder="e.g. HDFC0000240"
-                    value={ifscCode}
-                    onChange={(e) => setIfscCode(e.target.value)}
-                    className={`w-full rounded-xl border px-4 py-2.5 text-sm font-mono font-bold uppercase transition focus:outline-hidden ${errors.ifscCode ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
-                      }`}
-                  />
-                  {errors.ifscCode && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.ifscCode}</p>}
-                </div>
-
-                {/* Account Holder Name */}
-                <div>
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">Account Holder Name</label>
-                  <input
-                    type="text"
-                    placeholder="Name as registered with Bank"
-                    value={accountHolderName}
-                    onChange={(e) => setAccountHolderName(e.target.value)}
-                    className={`w-full rounded-xl border px-4 py-2.5 text-sm transition focus:outline-hidden ${errors.accountHolderName ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
-                      }`}
-                  />
-                  {errors.accountHolderName && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.accountHolderName}</p>}
-                </div>
-              </div>
-            </div>
+            )}
 
           </div>
 

@@ -36,7 +36,7 @@ export default function FAQ() {
   return (
     <section id="faq" className="bg-white py-24 border-b border-slate-100">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-        
+
         {/* Header */}
         <div className="text-center mb-16">
           <h2 className="font-display text-xs font-bold uppercase tracking-widest text-brand-600">Got Questions?</h2>
@@ -56,11 +56,10 @@ export default function FAQ() {
             return (
               <div
                 key={index}
-                className={`overflow-hidden rounded-2xl border transition-all duration-300 ${
-                  isOpen 
-                    ? 'border-brand-500/30 bg-brand-50/10 shadow-xs' 
+                className={`overflow-hidden rounded-2xl border transition-all duration-300 ${isOpen
+                    ? 'border-brand-500/30 bg-brand-50/10 shadow-xs'
                     : 'border-slate-200 bg-white hover:border-slate-300'
-                }`}
+                  }`}
               >
                 <button
                   onClick={() => setOpenIndex(isOpen ? null : index)}
@@ -68,9 +67,8 @@ export default function FAQ() {
                   id={`faq-toggle-${index}`}
                 >
                   <span className="font-display text-base sm:text-lg pr-4">{faq.q}</span>
-                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all ${
-                    isOpen ? 'bg-brand-100 text-brand-700 rotate-180' : 'bg-slate-50 text-slate-500'
-                  }`}>
+                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-all ${isOpen ? 'bg-brand-100 text-brand-700 rotate-180' : 'bg-slate-50 text-slate-500'
+                    }`}>
                     {isOpen ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                   </div>
                 </button>
@@ -102,7 +100,7 @@ export default function FAQ() {
           <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-4 text-xs font-bold text-brand-700">
             <span>Email: support@cashkred.com</span>
             <span className="hidden sm:inline text-slate-300">|</span>
-            <span>Tel: +91 80 4000 0000</span>
+            <span>Tel: 9220109924</span>
           </div>
         </div>
 
