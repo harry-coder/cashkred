@@ -96,9 +96,9 @@ export default function Footer({ onPageChange }: FooterProps) {
           </div>
           <div>
             <span className="font-semibold text-slate-400 uppercase tracking-wider text-xs block mb-1">Interest Rates and Terms</span>
-            Loan Amounts range from ₹5,000 to ₹80,000. Repayment period is 30 days. Our Annual Percentage Rate (APR) varies between 12% and 36% maximum, depending on your underwriting profile.
+            Loan Amounts range from ₹5,000 to ₹80,000. Repayment period is 30 days. The interest rate is 30% and the processing fee is 10%.
             <br />
-            *For example: A ₹10,000 micro-loan with a duration of 30 days has a qualified interest rate of 6% (₹600) and an underwriting fee of 1.5% (₹150). Total repayable amount is ₹10,750.*
+            *For example: A ₹10,000 micro-loan with a duration of 30 days has interest of 30% (₹3,000) and a processing fee of 10% (₹1,000). Total repayable amount is ₹14,000.*
           </div>
         </div>
 

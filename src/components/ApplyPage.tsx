@@ -57,15 +57,11 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
 
   // Calculations
   const getInterestRate = (days: number) => {
-    if (days === 30) return 0.06;
-    if (days === 120) return 0.08;
-    return 0.12;
+    return 0.30;
   };
 
   const getServiceFeeRate = (days: number) => {
-    if (days === 30) return 0.015;
-    if (days === 120) return 0.02;
-    return 0.03;
+    return 0.10;
   };
 
   const interestRate = getInterestRate(loanTenure);

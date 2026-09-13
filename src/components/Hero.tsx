@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { 
   ArrowRight, 
   ShieldCheck, 
   Zap, 
+  UserRound,
+  Plane,
+  ShoppingBag,
+  HeartPulse,
 } from 'lucide-react';
 import videoUrl from '../assets/video.mp4';
 
@@ -16,46 +20,13 @@ export default function Hero({ onApplyWithDetails }: HeroProps) {
   const [duration, setDuration] = useState<number>(30);
   const [repaymentDate, setRepaymentDate] = useState<string>('');
 
-  // Live transactions simulation state
-  const [liveTransactions, setLiveTransactions] = useState<Array<{ name: string; action: string; amt: number; time: string }>>([
-    { name: 'Ramesh K.', action: 'repaid', amt: 10600, time: 'Just now' },
-    { name: 'Priya D.', action: 'disbursed', amt: 25000, time: '2 mins ago' },
-    { name: 'Amit S.', action: 'disbursed', amt: 15000, time: '5 mins ago' },
-  ]);
-
-  useEffect(() => {
-    // Generate simulated live transactions with Indian names
-    const names = ['Vikram S.', 'Sneha R.', 'Amit P.', 'Neha G.', 'Rohan M.', 'Karan T.', 'Divya N.', 'Sunita B.'];
-    const actions = ['disbursed', 'repaid', 'disbursed', 'repaid'];
-    const amounts = [10000, 15000, 20000, 25000, 30000, 40000, 50000, 60000];
-
-    const interval = setInterval(() => {
-      const randomName = names[Math.floor(Math.random() * names.length)];
-      const randomAction = actions[Math.floor(Math.random() * actions.length)];
-      const randomAmt = amounts[Math.floor(Math.random() * amounts.length)];
-      const newTx = {
-        name: randomName,
-        action: randomAction,
-        amt: randomAction === 'repaid' ? randomAmt + Math.round(randomAmt * 0.08) : randomAmt,
-        time: 'Just now',
-      };
-      setLiveTransactions((prev) => [newTx, prev[0], prev[1]].slice(0, 3));
-    }, 8000);
-
-    return () => clearInterval(interval);
-  }, []);
-
   // Calculate fees and rates
   const getInterestRate = (days: number) => {
-    if (days === 30) return 0.06;
-    if (days === 120) return 0.08;
-    return 0.12;
+    return 0.30;
   };
 
   const getServiceFeeRate = (days: number) => {
-    if (days === 30) return 0.015;
-    if (days === 120) return 0.02;
-    return 0.03;
+    return 0.10;
   };
 
   const interestRate = getInterestRate(duration);
@@ -113,40 +84,65 @@ export default function Hero({ onApplyWithDetails }: HeroProps) {
               </div>
             </div>
 
-            {/* Live Feed Component */}
-            <div className="hidden sm:block max-w-md mx-auto lg:mx-0 bg-white/80 border border-slate-100 rounded-2xl p-4 shadow-sm backdrop-blur-sm">
-              <div className="flex items-center justify-between border-b border-slate-50 pb-2 mb-2">
-                <span className="text-xs font-semibold text-slate-700 flex items-center space-x-1">
-                  <span className="relative flex h-2 w-2 mr-1.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-brand-500"></span>
-                  </span>
-                  Live Disbursement Feed
+            {/* Loan Categories */}
+            <div className="max-w-2xl mx-auto lg:mx-0">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-brand-600">Flexible borrowing</p>
+                  <h2 className="font-display text-xl font-extrabold text-slate-900">Our Loan Categories</h2>
+                </div>
+                <span className="hidden rounded-full bg-brand-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-brand-700 sm:inline-flex">
+                  Instant plans
                 </span>
-                <span className="font-mono text-[10px] text-brand-600 font-semibold bg-brand-50 px-2 py-0.5 rounded-full">Secure</span>
               </div>
-              <div className="space-y-2">
-                <AnimatePresence mode="popLayout">
-                  {liveTransactions.map((tx, idx) => (
-                    <motion.div
-                      key={`${tx.name}-${idx}`}
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 10 }}
-                      transition={{ duration: 0.3 }}
-                      className="flex items-center justify-between text-xs"
-                    >
-                      <div className="flex items-center space-x-2 text-slate-600">
-                        <div className={`h-2 w-2 rounded-full ${tx.action === 'repaid' ? 'bg-blue-500' : 'bg-teal-500'}`} />
-                        <span>{tx.name}</span>
-                        <span className="text-slate-400">{tx.action === 'repaid' ? 'successfully repaid' : 'received loan'}</span>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  {
+                    name: 'Personal Loan',
+                    description: 'Cover everyday needs with a fast, flexible cash plan.',
+                    icon: UserRound,
+                  },
+                  {
+                    name: 'Travel Loan',
+                    description: 'Fund flights, stays, and the trip you have been planning.',
+                    icon: Plane,
+                  },
+                  {
+                    name: 'Shopping Loan',
+                    description: 'Make important purchases without waiting for payday.',
+                    icon: ShoppingBag,
+                  },
+                  {
+                    name: 'Medical Loan',
+                    description: 'Get timely support for urgent treatment and care costs.',
+                    icon: HeartPulse,
+                  },
+                ].map(({ name, description, icon: CategoryIcon }) => (
+                  <div
+                    key={name}
+                    className="group rounded-2xl border border-slate-200/80 bg-white/90 p-4 text-left shadow-sm backdrop-blur-sm transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md"
+                  >
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                        <CategoryIcon className="h-4 w-4" />
                       </div>
-                      <span className={`font-mono font-semibold ${tx.action === 'repaid' ? 'text-blue-600' : 'text-teal-600'}`}>
-                        ₹{tx.amt.toLocaleString()}
+                      <span className="rounded-full bg-teal-50 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-teal-700">
+                        Instant plan
                       </span>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
+                    </div>
+                    <h3 className="font-display text-sm font-bold text-slate-900">{name}</h3>
+                    <p className="mt-1 min-h-10 text-[11px] leading-relaxed text-slate-500">{description}</p>
+                    <button
+                      type="button"
+                      onClick={handleApply}
+                      className="mt-3 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-brand-700 transition group-hover:text-brand-900"
+                    >
+                      Apply now
+                      <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -184,7 +180,7 @@ export default function Hero({ onApplyWithDetails }: HeroProps) {
                   <p className="text-xs text-slate-500">Select amount & flexible duration</p>
                 </div>
                 <div className="flex items-center space-x-1 bg-brand-50 text-brand-700 px-2.5 py-1 rounded-xl text-xs font-semibold">
-                  <span>Interest rate from 6%</span>
+                  <span>Interest rate 30%</span>
                 </div>
               </div>
 

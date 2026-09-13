@@ -28,7 +28,7 @@ export default function RatesPage() {
             </div>
             <div>
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Annual Percentage Rate (APR)</h4>
-              <p className="text-2xl font-extrabold text-slate-900 mt-1">12% - 36%</p>
+              <p className="text-2xl font-extrabold text-slate-900 mt-1">30%</p>
             </div>
             <p className="text-xs text-slate-500 leading-relaxed">
               Based on your credit assessment CIBIL ratings. Consistent timely repayments automatically qualify you for lower interest tiers.
@@ -42,7 +42,7 @@ export default function RatesPage() {
             </div>
             <div>
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Processing & Admin Fees</h4>
-              <p className="text-2xl font-extrabold text-slate-900 mt-1">1.5% - 3%</p>
+              <p className="text-2xl font-extrabold text-slate-900 mt-1">10%</p>
             </div>
             <p className="text-xs text-slate-500 leading-relaxed">
               Covers administrative verification and instant IMPS gateway fees. Zero fee deductions upfront. 100% principal is disbursed.
