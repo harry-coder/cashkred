@@ -18,7 +18,7 @@ import ApplyPage from './components/ApplyPage';
 export default function App() {
   // Page Navigation State: 'home' | 'apply' | 'repay' | 'rates' | 'about' | 'contact' | 'terms' | 'privacy'
   const [currentPage, setCurrentPage] = useState<string>('home');
-  const [calculatorPreset, setCalculatorPreset] = useState({ amount: 15000, duration: 91 });
+  const [calculatorPreset, setCalculatorPreset] = useState({ amount: 15000, duration: 30 });
 
   // Application preset triggered from Hero Calculator
   const handleApplyWithDetails = (amount: number, duration: number) => {

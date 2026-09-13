@@ -17,11 +17,11 @@ export default function FAQ() {
     },
     {
       q: 'How long does the loan approval and disbursement take?',
-      a: 'Our underwriting scoring engine reviews your application instantly. Most applicants receive their credit decision in less than 5 minutes. Once approved, the funds are automatically disbursed via IMPS directly to your bank account in seconds.',
+      a: 'Our underwriting scoring engine reviews your application instantly. Most applicants receive their credit decision in less than 5 minutes. Once approved, the funds are automatically disbursed directly to your bank account.',
     },
     {
       q: 'How do I repay my CashKred loan?',
-      a: 'Repayment is simple and secure. You can pay directly using any UPI app (Google Pay, PhonePe, Paytm, BHIM UPI) or via direct IMPS NetBanking transfer to our designated virtual bank account, which is unique to your loan statement details sent to your registered email.',
+      a: 'Repayment is simple and secure. You can pay directly using any UPI app (Google Pay, PhonePe, Paytm, or BHIM UPI) using the instructions provided in your loan statement.',
     },
     {
       q: 'Can I repay early, and does it increase my limit?',
@@ -35,7 +35,7 @@ export default function FAQ() {
 
   return (
     <section id="faq" className="bg-white py-24 border-b border-slate-100">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-4xl">
 
         {/* Header */}
         <div className="text-center mb-16">

@@ -10,7 +10,7 @@ export default function Footer({ onPageChange }: FooterProps) {
 
   return (
     <footer className="bg-slate-900 text-slate-400 pt-16 pb-12 font-sans border-t border-slate-800">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
 
         {/* Upper Footer Grid */}
         <div className="grid gap-8 lg:grid-cols-12 mb-12">
@@ -86,32 +86,6 @@ export default function Footer({ onPageChange }: FooterProps) {
             </ul>
           </div>
 
-          {/* Column 3: Indian Repayment Box */}
-          <div className="lg:col-span-4 bg-slate-950 border border-slate-800 rounded-2xl p-5.5 space-y-3.5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Repay via Bank IMPS</span>
-              <span className="text-[10px] font-semibold text-teal-500 bg-teal-950/40 border border-teal-900/40 px-2 py-0.5 rounded-full">Automated</span>
-            </div>
-
-            <div className="space-y-2.5 text-xs leading-normal">
-              <div className="flex justify-between items-center text-slate-300">
-                <span>Bank Name</span>
-                <span className="font-mono font-bold text-slate-100">HDFC BANK LTD</span>
-              </div>
-              <div className="flex justify-between items-center text-slate-300">
-                <span>IFSC Code</span>
-                <span className="font-mono font-bold text-brand-400">HDFC0000240</span>
-              </div>
-              <div className="flex justify-between items-center text-slate-300">
-                <span>Virtual Account</span>
-                <span className="font-mono font-bold text-slate-100">CKRED + Mobile No</span>
-              </div>
-              <p className="text-[10px] text-slate-500 italic mt-2.5">
-                Each applicant gets a dedicated virtual account. Settle via IMPS, NEFT, or UPI to trigger auto-reconciliation.
-              </p>
-            </div>
-          </div>
-
         </div>
 
         {/* Regulatory Disclosure Statement */}
@@ -122,9 +96,9 @@ export default function Footer({ onPageChange }: FooterProps) {
           </div>
           <div>
             <span className="font-semibold text-slate-400 uppercase tracking-wider text-xs block mb-1">Interest Rates and Terms</span>
-            Loan Amounts range from ₹5,000 to ₹80,000. Repayment periods are flexible from 91 days to 180 days. Our Annual Percentage Rate (APR) varies between 12% and 36% maximum, depending on your underwriting profile.
+            Loan Amounts range from ₹5,000 to ₹80,000. Repayment period is 30 days. Our Annual Percentage Rate (APR) varies between 12% and 36% maximum, depending on your underwriting profile.
             <br />
-            *For example: A ₹10,000 micro-loan with a duration of 91 days has a qualified interest rate of 6% (₹600) and an underwriting fee of 1.5% (₹150). Total repayable amount is ₹10,750.*
+            *For example: A ₹10,000 micro-loan with a duration of 30 days has a qualified interest rate of 6% (₹600) and an underwriting fee of 1.5% (₹150). Total repayable amount is ₹10,750.*
           </div>
         </div>
 

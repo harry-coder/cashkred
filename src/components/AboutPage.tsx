@@ -4,7 +4,7 @@ import { Target, Users, Landmark, ShieldCheck } from 'lucide-react';
 export default function AboutPage() {
   return (
     <div className="py-12 bg-slate-50 min-h-screen">
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl">
         {/* Hero Header */}
         <div className="text-center max-w-3xl mx-auto mb-16">
           <motion.div
@@ -65,7 +65,7 @@ export default function AboutPage() {
               </p>
               <div className="p-4 bg-brand-50 border border-brand-100/50 rounded-2xl text-brand-800 font-semibold flex items-start gap-2.5 mt-4">
                 <ShieldCheck className="h-5 w-5 text-brand-600 shrink-0 mt-0.5" />
-                <span>Our Principal NBFC Partner: KreditKred Finance Private Limited (RBI Reg No: B-14.XXXX)</span>
+                <span>Our Principal NBFC Partner: Daksh Lefins Limited, 207 Second Floor, Allied House, Inderlok, New Delhi, 110035</span>
               </div>
             </div>
           </motion.div>

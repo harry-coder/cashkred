@@ -4,8 +4,8 @@ import {
   ArrowRight, 
   ShieldCheck, 
   Zap, 
-  Star
 } from 'lucide-react';
+import videoUrl from '../assets/video.mp4';
 
 interface HeroProps {
   onApplyWithDetails: (amount: number, duration: number) => void;
@@ -13,7 +13,7 @@ interface HeroProps {
 
 export default function Hero({ onApplyWithDetails }: HeroProps) {
   const [amount, setAmount] = useState<number>(15000);
-  const [duration, setDuration] = useState<number>(91); // 91, 120, 180 days
+  const [duration, setDuration] = useState<number>(30);
   const [repaymentDate, setRepaymentDate] = useState<string>('');
 
   // Live transactions simulation state
@@ -47,15 +47,15 @@ export default function Hero({ onApplyWithDetails }: HeroProps) {
 
   // Calculate fees and rates
   const getInterestRate = (days: number) => {
-    if (days === 91) return 0.06; // 6%
-    if (days === 120) return 0.08; // 8%
-    return 0.12; // 12% for 180 days
+    if (days === 30) return 0.06;
+    if (days === 120) return 0.08;
+    return 0.12;
   };
 
   const getServiceFeeRate = (days: number) => {
-    if (days === 91) return 0.015; // 1.5%
-    if (days === 120) return 0.02; // 2%
-    return 0.03; // 3%
+    if (days === 30) return 0.015;
+    if (days === 120) return 0.02;
+    return 0.03;
   };
 
   const interestRate = getInterestRate(duration);
@@ -83,7 +83,7 @@ export default function Hero({ onApplyWithDetails }: HeroProps) {
       <div className="absolute top-1/2 left-1/2 -z-10 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-brand-100/40 bg-radial from-brand-50/20 to-transparent blur-3xl"></div>
       <div className="absolute top-20 right-10 -z-10 h-72 w-72 rounded-full bg-teal-100/10 blur-2xl"></div>
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
         <div className="grid gap-12 lg:grid-cols-12 lg:items-center">
           
           {/* Hero Left Content */}
@@ -102,14 +102,7 @@ export default function Hero({ onApplyWithDetails }: HeroProps) {
             </p>
 
             {/* Quick stats tags */}
-            <div className="grid grid-cols-3 gap-4 border-y border-slate-100 py-5 text-center lg:text-left max-w-md mx-auto lg:mx-0">
-              <div>
-                <p className="font-display text-2xl font-bold text-slate-900 flex items-center justify-center lg:justify-start gap-0.5">
-                  <span>4.8</span>
-                  <Star className="h-4 w-4 fill-amber-400 text-amber-400 shrink-0" />
-                </p>
-                <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Play Store Rating</p>
-              </div>
+            <div className="grid grid-cols-2 gap-4 border-y border-slate-100 py-5 text-center lg:text-left max-w-md mx-auto lg:mx-0">
               <div>
                 <p className="font-display text-2xl font-bold text-slate-900">5 Min</p>
                 <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Disbursal Time</p>
@@ -160,11 +153,28 @@ export default function Hero({ onApplyWithDetails }: HeroProps) {
 
           {/* Hero Right Content - Instant Loan Calculator */}
           <div id="calculator" className="lg:col-span-6">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+              className="relative mx-auto w-full max-w-none overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xl shadow-slate-100"
+            >
+              <video
+                className="block h-auto w-full"
+                src={videoUrl}
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="auto"
+              />
+            </motion.div>
+
             <motion.div 
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.1 }}
-              className="relative mx-auto max-w-md overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-100"
+              className="hidden relative mx-auto max-w-md overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-6 shadow-xl shadow-slate-100"
             >
               <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-brand-500 to-blue-400" />
               
@@ -212,7 +222,7 @@ export default function Hero({ onApplyWithDetails }: HeroProps) {
               <div className="space-y-3 mb-6">
                 <span className="text-sm font-medium text-slate-500">Repayment Period</span>
                 <div className="grid grid-cols-3 gap-2">
-                  {[91, 120, 180].map((days) => (
+                  {[30, 120, 180].map((days) => (
                     <button
                       key={days}
                       onClick={() => setDuration(days)}

@@ -54,8 +54,8 @@ export default function RepayPage({ onPageChange }: RepayPageProps) {
           interest: interest,
           serviceFee: service,
           totalPayable: amt + interest + service,
-          repaymentDate: new Date(Date.now() + 12 * 86400000).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }),
-          daysRemaining: 12,
+          repaymentDate: new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }),
+          daysRemaining: 30,
           status: 'active',
         });
         setAmountToPay(amt + interest + service);
@@ -92,7 +92,7 @@ export default function RepayPage({ onPageChange }: RepayPageProps) {
 
   return (
     <div className="py-12 bg-slate-50 min-h-screen font-sans">
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl">
         
         {/* Header section */}
         <div className="text-center max-w-3xl mx-auto mb-12">
@@ -103,7 +103,7 @@ export default function RepayPage({ onPageChange }: RepayPageProps) {
             Repay Your <span className="text-brand-600">CashKred Loan</span>
           </h1>
           <p className="text-sm text-slate-500 leading-relaxed">
-            Settle your loan balance instantly from any location in India using standard digital channels: Unified Payments Interface (UPI), NetBanking, or virtual IMPS transfer.
+            Settle your loan balance instantly using Unified Payments Interface (UPI).
           </p>
         </div>
 
@@ -129,7 +129,7 @@ export default function RepayPage({ onPageChange }: RepayPageProps) {
                 </div>
               </div>
 
-              {/* IMPS Bank Transfer Info */}
+              {/* Bank Transfer via Virtual Account (IMPS/NEFT) */}
               <div className="flex gap-4 border-t border-slate-50 pt-5">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-600">
                   <Landmark className="h-5 w-5" />
@@ -137,9 +137,9 @@ export default function RepayPage({ onPageChange }: RepayPageProps) {
                 <div className="space-y-2">
                   <h4 className="text-sm font-bold text-slate-900">2. Bank Transfer via Virtual Account (IMPS/NEFT)</h4>
                   <p className="text-xs text-slate-500 leading-relaxed">
-                    You can pay from any bank account inside India (ICICI, HDFC, SBI, Axis, etc.) directly via online banking to our designated company settlement coordinates:
+                    You can pay from any bank account inside India directly via online banking to our designated company settlement coordinates:
                   </p>
-                  
+
                   <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2 font-mono text-[11px] text-slate-600 leading-normal">
                     <div className="flex justify-between">
                       <span className="text-slate-400">Beneficiary Name</span>
@@ -158,12 +158,13 @@ export default function RepayPage({ onPageChange }: RepayPageProps) {
                       <span className="font-bold text-teal-600">CKRED{phoneNumber ? phoneNumber.replace(/\D/g, '').slice(-10) : '9999999999'}</span>
                     </div>
                   </div>
-                  
+
                   <p className="text-[10px] text-slate-400 italic leading-normal">
-                    *Your Account Number is uniquely generated for your loan. Transferring to this virtual account triggers automatic reconciliation within 10 minutes.*
+                    *Your account number is uniquely generated for your loan. Transferring to this virtual account triggers automatic reconciliation within 10 minutes.*
                   </p>
                 </div>
               </div>
+
             </div>
 
             {/* Risk Notice */}
@@ -290,7 +291,7 @@ export default function RepayPage({ onPageChange }: RepayPageProps) {
                                   }`}
                                 >
                                   <Landmark className="h-4 w-4" />
-                                  <span>Pay via IMPS</span>
+                                  <span>Pay via IMPS/NEFT</span>
                                 </button>
                               </div>
                             </div>
@@ -320,10 +321,10 @@ export default function RepayPage({ onPageChange }: RepayPageProps) {
                               <div className="p-4 bg-slate-50 border border-slate-100 rounded-xl space-y-2 text-xs">
                                 <p className="font-bold text-slate-700">Bank Transfer Repayment Guide:</p>
                                 <p className="text-slate-500 text-[11px] leading-normal">
-                                  Transfer exactly <strong>₹{amountToPay.toLocaleString()}</strong> via IMPS to our HDFC virtual account coordinates shown on the left side of this page. Settle within today to avoid system automated daily late fee accruals.
+                                  Transfer exactly <strong>₹{amountToPay.toLocaleString()}</strong> via IMPS or NEFT to the virtual account coordinates shown on the left side of this page.
                                 </p>
                                 <p className="text-[10px] text-slate-400 italic mt-1">
-                                  Our auto-reconcile bots monitor HDFC IMPS streams every 10 mins. Keep your IMPS transaction reference ID handy.
+                                  Our auto-reconciliation process monitors transfers. Keep your transaction reference ID handy.
                                 </p>
                               </div>
                             )}

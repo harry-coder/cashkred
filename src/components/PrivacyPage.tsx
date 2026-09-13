@@ -3,7 +3,7 @@ import { Shield, Eye, Database, HelpCircle } from 'lucide-react';
 export default function PrivacyPage() {
   return (
     <div className="py-12 bg-slate-50 min-h-screen font-sans">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-4xl">
         {/* Header */}
         <div className="border-b border-slate-200 pb-8 mb-10">
           <span className="text-xs font-bold text-brand-600 uppercase tracking-widest block mb-2">Legal Declarations</span>

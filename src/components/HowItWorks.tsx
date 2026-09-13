@@ -35,7 +35,7 @@ export default function HowItWorks() {
 
   return (
     <section id="how-it-works" className="bg-white py-24 border-y border-slate-100 font-sans">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
         
         {/* Title / Header */}
         <div className="mx-auto max-w-3xl text-center mb-16">

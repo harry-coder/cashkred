@@ -242,7 +242,6 @@ app.post("/api/apply", async (req, res) => {
             }
           });
           await transporter.verify();
-          console.log(`[SMTP] Handshake successful. Sending email to ${notificationEmails.length} recipient(s).`);
           await transporter.sendMail({
             from: `"${fullName} via CashKred" <${smtpUser}>`,
             to: notificationEmails.join(", "),

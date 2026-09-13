@@ -3,7 +3,7 @@ import { BookOpen, Scale, AlertTriangle, ShieldCheck } from 'lucide-react';
 export default function TermsPage() {
   return (
     <div className="py-12 bg-slate-50 min-h-screen font-sans">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-4xl">
         
         {/* Header */}
         <div className="border-b border-slate-200 pb-8 mb-10">

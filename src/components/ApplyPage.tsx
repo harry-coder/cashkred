@@ -57,13 +57,13 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
 
   // Calculations
   const getInterestRate = (days: number) => {
-    if (days === 91) return 0.06;
+    if (days === 30) return 0.06;
     if (days === 120) return 0.08;
     return 0.12;
   };
 
   const getServiceFeeRate = (days: number) => {
-    if (days === 91) return 0.015;
+    if (days === 30) return 0.015;
     if (days === 120) return 0.02;
     return 0.03;
   };
@@ -182,7 +182,7 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
 
   if (submissionStatus === 'success') {
     return (
-      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 lg:px-8 font-sans">
+      <div className="mx-auto max-w-2xl py-16 font-sans">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -281,7 +281,7 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
 
   return (
     <section className="bg-slate-50 py-12 min-h-screen font-sans">
-      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-4xl">
 
         {/* Back Link */}
         <button
@@ -343,7 +343,7 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
                     onChange={(e) => setLoanTenure(Number(e.target.value))}
                     className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold"
                   >
-                    <option value={91}>91 Days</option>
+                    <option value={30}>30 Days</option>
                     <option value={120}>120 Days</option>
                     <option value={180}>180 Days</option>
                   </select>

@@ -3,7 +3,7 @@ import { Percent, Shield, Receipt, Scale } from 'lucide-react';
 export default function RatesPage() {
   return (
     <div className="py-12 bg-slate-50 min-h-screen">
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl">
         
         {/* Header */}
         <div className="text-center max-w-3xl mx-auto mb-14">
@@ -56,7 +56,7 @@ export default function RatesPage() {
             </div>
             <div>
               <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Flexible Tenures</h4>
-              <p className="text-2xl font-extrabold text-slate-900 mt-1">91 - 180 Days</p>
+              <p className="text-2xl font-extrabold text-slate-900 mt-1">30 Days</p>
             </div>
             <p className="text-xs text-slate-500 leading-relaxed">
               Choose comfortable settlement windows suited for your salary calendar. Pay off early at any time with zero prepayment charges.
@@ -94,7 +94,7 @@ export default function RatesPage() {
             {/* Left table of charges */}
             <div className="md:col-span-7 space-y-4">
               <p className="text-xs text-slate-500 leading-relaxed">
-                Below is a precise breakdown for a customer who borrows a principal sum of <strong>₹10,000</strong> for a standard duration of <strong>91 Days</strong> at a qualified interest rate of <strong>18% Annualized (APR)</strong>:
+                Below is a precise breakdown for a customer who borrows a principal sum of <strong>₹10,000</strong> for a standard duration of <strong>30 Days</strong> at a qualified interest rate of <strong>18% Annualized (APR)</strong>:
               </p>
 
               <div className="border border-slate-100 rounded-2xl overflow-hidden text-xs">
@@ -119,7 +119,7 @@ export default function RatesPage() {
                   <span className="text-right font-mono font-bold text-slate-800">₹200.00</span>
                 </div>
                 <div className="grid grid-cols-2 p-3 border-b border-slate-100">
-                  <span className="text-slate-500 font-medium">E. Total Interest Accrued (over 91 Days)</span>
+                  <span className="text-slate-500 font-medium">E. Total Interest Accrued (over 30 Days)</span>
                   <span className="text-right font-mono font-bold text-slate-800">₹450.00</span>
                 </div>
                 <div className="grid grid-cols-2 p-3 bg-brand-50/20 font-bold">
@@ -136,21 +136,10 @@ export default function RatesPage() {
               <div className="space-y-4 text-xs">
                 <div className="relative pl-5 border-l-2 border-brand-500">
                   <div className="absolute top-1 -left-1.5 h-3 w-3 rounded-full bg-brand-600" />
-                  <span className="font-bold text-slate-800 block">Month 1 Installment</span>
+                  <span className="font-bold text-slate-800 block">30-Day Repayment</span>
                   <span className="text-slate-400">Amount: <strong>₹3,550.00</strong></span>
                 </div>
 
-                <div className="relative pl-5 border-l-2 border-brand-300">
-                  <div className="absolute top-1 -left-1.5 h-3 w-3 rounded-full bg-brand-400" />
-                  <span className="font-bold text-slate-800 block">Month 2 Installment</span>
-                  <span className="text-slate-400">Amount: <strong>₹3,550.00</strong></span>
-                </div>
-
-                <div className="relative pl-5 border-l-2 border-teal-300">
-                  <div className="absolute top-1 -left-1.5 h-3 w-3 rounded-full bg-teal-500" />
-                  <span className="font-bold text-slate-800 block">Month 3 Installment (Final)</span>
-                  <span className="text-slate-400">Amount: <strong>₹3,550.00</strong></span>
-                </div>
               </div>
 
               <div className="pt-2 text-[10px] text-slate-400 italic leading-normal border-t border-slate-200/60">
