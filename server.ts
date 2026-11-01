@@ -47,10 +47,20 @@ app.post("/api/apply", async (req, res) => {
     } = req.body;
 
     // Validate essential fields
-    if (!firstName || !lastName || !phone || !loanAmount) {
+    const missingFields = Object.entries({
+      "first name": firstName,
+      "last name": lastName,
+      "phone number": phone,
+      "loan amount": loanAmount,
+    })
+      .filter(([, value]) => !value)
+      .map(([label]) => label);
+
+    if (missingFields.length > 0) {
+      console.warn(`[Apply] Missing fields: ${missingFields.join(", ")}. Received keys: ${Object.keys(req.body || {}).join(", ") || "(empty body)"}`);
       return res.status(400).json({
         success: false,
-        error: "Missing mandatory fields: first name, last name, phone number, and loan amount are required."
+        error: `Missing mandatory fields: ${missingFields.join(", ")}.`
       });
     }
 
