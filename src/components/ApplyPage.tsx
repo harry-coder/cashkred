@@ -18,6 +18,9 @@ import {
   ArrowLeft
 } from 'lucide-react';
 
+// Bank details section is temporarily hidden; its validation is skipped while disabled
+const BANK_DETAILS_ENABLED = false;
+
 interface ApplyPageProps {
   calculatorPreset: { amount: number; duration: number };
   onPageChange: (page: string) => void;
@@ -28,7 +31,8 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
   const [loanAmount, setLoanAmount] = useState<number>(calculatorPreset.amount);
   const [loanTenure, setLoanTenure] = useState<number>(calculatorPreset.duration);
 
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [dob, setDob] = useState('');
@@ -53,6 +57,7 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
   const [submissionStatus, setSubmissionStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [successDetails, setSuccessDetails] = useState<{ smtpConfigured: boolean; message: string } | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   // Calculations
@@ -74,7 +79,8 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
   const validateForm = () => {
     const tempErrors: { [key: string]: string } = {};
 
-    if (!fullName.trim()) tempErrors.fullName = 'Full Name is required';
+    if (!firstName.trim()) tempErrors.firstName = 'First Name is required';
+    if (!lastName.trim()) tempErrors.lastName = 'Last Name is required';
 
     // 10-digit Indian mobile number
     const cleanPhone = phone.replace(/\D/g, '');
@@ -104,6 +110,23 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
       tempErrors.monthlyIncome = 'Net monthly income is required';
     }
 
+    if (BANK_DETAILS_ENABLED) {
+      if (!bankName.trim()) tempErrors.bankName = 'Bank Name is required';
+      if (!accountNumber.trim() || accountNumber.length < 9) {
+        tempErrors.accountNumber = 'Please enter a valid Bank Account Number';
+      }
+
+      // IFSC Code validation: 4 letters, 0, 6 alpha-numeric
+      const cleanIfsc = ifscCode.trim().toUpperCase();
+      if (!cleanIfsc || !cleanIfsc.match(/^[A-Z]{4}0[A-Z0-9]{6}$/)) {
+        tempErrors.ifscCode = 'Please enter a valid 11-digit IFSC code (e.g. HDFC0000240)';
+      }
+
+      if (!accountHolderName.trim()) {
+        tempErrors.accountHolderName = 'Account Holder Name is required';
+      }
+    }
+
     setErrors(tempErrors);
     return Object.keys(tempErrors).length === 0;
   };
@@ -113,6 +136,7 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
 
     e.preventDefault();
     setErrorMessage('');
+    setErrorCode(null);
 
     if (!validateForm()) {
       // Scroll to first error
@@ -132,7 +156,8 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          fullName,
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
           email,
           phone,
           dob,
@@ -154,7 +179,11 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
         }),
       });
 
-      const data = await response.json();
+      // A proxy or crashed server can answer with HTML instead of JSON
+      const data = await response.json().catch(() => ({
+        success: false,
+        error: `The server responded unexpectedly (HTTP ${response.status}). Please try again shortly.`
+      }));
 
       if (response.ok && data.success) {
         setSuccessDetails({
@@ -165,6 +194,7 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
         window.scrollTo({ top: 0, behavior: 'instant' });
       } else {
         setErrorMessage(data.error || 'Failed to submit application. Please verify details and try again.');
+        setErrorCode(data.errorCode || null);
         setSubmissionStatus('error');
       }
     } catch (err) {
@@ -220,7 +250,7 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
           <div className="border-t border-b border-slate-100 py-5 max-w-md mx-auto text-left text-xs space-y-2.5">
             <div className="flex justify-between">
               <span className="text-slate-400 font-semibold">Applicant Name:</span>
-              <span className="text-slate-800 font-bold">{fullName}</span>
+              <span className="text-slate-800 font-bold">{firstName} {lastName}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400 font-semibold">Registered Mobile:</span>
@@ -250,7 +280,8 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
             <button
               onClick={() => {
                 setSubmissionStatus('idle');
-                setFullName('');
+                setFirstName('');
+                setLastName('');
                 setEmail('');
                 setPhone('');
                 setPanNumber('');
@@ -297,12 +328,6 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
             Settle your loan application by submitting your details below. Settle in minutes, with direct email notification on submission.
           </p>
         </div>
-
-        {errorMessage && (
-          <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-100 text-sm text-red-600 font-medium">
-            {errorMessage}
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="grid gap-8 lg:grid-cols-12 items-start">
 
@@ -357,18 +382,32 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                {/* Full name */}
-                <div className="sm:col-span-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">Full Name (As on PAN Card)</label>
+                {/* First name */}
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">First Name (As on PAN Card)</label>
                   <input
                     type="text"
-                    placeholder="Enter your full legal name"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className={`w-full rounded-xl border px-4 py-2.5 text-sm transition focus:outline-hidden ${errors.fullName ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
+                    placeholder="Enter your first name"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    className={`w-full rounded-xl border px-4 py-2.5 text-sm transition focus:outline-hidden ${errors.firstName ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
                       }`}
                   />
-                  {errors.fullName && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.fullName}</p>}
+                  {errors.firstName && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.firstName}</p>}
+                </div>
+
+                {/* Last name */}
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase tracking-wide block mb-1.5">Last Name (As on PAN Card)</label>
+                  <input
+                    type="text"
+                    placeholder="Enter your last name"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    className={`w-full rounded-xl border px-4 py-2.5 text-sm transition focus:outline-hidden ${errors.lastName ? 'border-red-300 focus:ring-1 focus:ring-red-500' : 'border-slate-200 focus:ring-1 focus:ring-brand-500'
+                      }`}
+                  />
+                  {errors.lastName && <p className="text-[10px] text-red-500 font-semibold mt-1">{errors.lastName}</p>}
                 </div>
 
                 {/* Email address */}
@@ -559,7 +598,7 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
               </div>
             </div>
 
-            {false && (
+            {BANK_DETAILS_ENABLED && (
               // 4. Bank Account Details (temporarily disabled)
               <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-xs space-y-4">
                 <div className="flex items-center space-x-2 border-b border-slate-50 pb-3">
@@ -658,6 +697,13 @@ export default function ApplyPage({ calculatorPreset, onPageChange }: ApplyPageP
                   <span className="font-display text-lg font-black text-brand-600 font-mono">₹{totalRepayable.toLocaleString()}</span>
                 </div>
               </div>
+
+              {errorMessage && (
+                <div role="alert" className="p-3 rounded-xl bg-red-50 border border-red-100 text-xs text-red-600 font-medium leading-relaxed">
+                  {errorMessage}
+                  {errorCode && <span className="block mt-1 text-[10px] text-red-400 font-mono">Error code: {errorCode}</span>}
+                </div>
+              )}
 
               <button
                 type="submit"

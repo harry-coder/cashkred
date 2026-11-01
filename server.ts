@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
+import { insertLead, isDbConfigured } from "./db";
 
 const dotenvResult = dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 if (dotenvResult.error) {
@@ -17,9 +18,14 @@ app.use(express.json());
 
 // API route to receive loan applications
 app.post("/api/apply", async (req, res) => {
+  // Tracks which step failed so the UI can show a specific message
+  let stage: "db" | "email" | "other" = "other";
+  let leadId: number | null = null;
+
   try {
     const {
-      fullName,
+      firstName,
+      lastName,
       email,
       phone,
       dob,
@@ -41,11 +47,39 @@ app.post("/api/apply", async (req, res) => {
     } = req.body;
 
     // Validate essential fields
-    if (!fullName || !phone || !loanAmount) {
+    if (!firstName || !lastName || !phone || !loanAmount) {
       return res.status(400).json({
         success: false,
-        error: "Missing mandatory fields: full name, phone number, and loan amount are required."
+        error: "Missing mandatory fields: first name, last name, phone number, and loan amount are required."
       });
+    }
+
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    // Persist the lead before notifying, so a mail failure never loses an application
+    if (isDbConfigured()) {
+      stage = "db";
+      leadId = await insertLead({
+        firstName,
+        lastName,
+        email,
+        phone,
+        dob,
+        gender,
+        panNumber,
+        aadhaarNumber,
+        address,
+        pinCode,
+        employmentType,
+        monthlyIncome,
+        companyName,
+        designation,
+        loanAmount,
+        loanTenure,
+      });
+      console.log(`[DB] Lead saved with id ${leadId}`);
+    } else {
+      console.log("[DB] Database settings are not configured in .env. Skipping lead insert.");
     }
 
     // Compose HTML Email Content
@@ -201,6 +235,7 @@ app.post("/api/apply", async (req, res) => {
     console.log("-----------------------------------------------------");
 
     if (isSmtpConfigured) {
+      stage = "email";
       const primaryPort = Number(smtpPort);
       const smtpAttempts = [
         { port: primaryPort, secure: primaryPort === 465, label: "primary" },
@@ -285,10 +320,19 @@ app.post("/api/apply", async (req, res) => {
       });
     }
   } catch (error: any) {
-    console.error("Error processing application:", error);
+    console.error(`Error processing application (stage: ${stage}):`, error);
+
+    const errorMessages = {
+      db: "We couldn't save your application right now. Please try again in a few minutes.",
+      email: `Your application has been saved${leadId ? ` (reference #${leadId})` : ""}, but we couldn't notify our team by email. You don't need to submit again; we'll pick it up from our records.`,
+      other: "An internal server error occurred while processing your application. Please try again later.",
+    };
+
     res.status(500).json({
       success: false,
-      error: "An internal server error occurred while processing your application. Please try again later."
+      stage,
+      errorCode: error?.code || null,
+      error: errorMessages[stage]
     });
   }
 });
