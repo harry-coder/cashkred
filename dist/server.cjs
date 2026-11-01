@@ -27,6 +27,61 @@ var import_path = __toESM(require("path"), 1);
 var import_vite = require("vite");
 var import_nodemailer = __toESM(require("nodemailer"), 1);
 var import_dotenv = __toESM(require("dotenv"), 1);
+
+// db.ts
+var import_promise = __toESM(require("mysql2/promise"), 1);
+var pool = null;
+function isDbConfigured() {
+  return !!(process.env.DB_HOST && process.env.DB_USER && process.env.DB_NAME && process.env.DB_TABLE);
+}
+function getPool() {
+  if (!pool) {
+    pool = import_promise.default.createPool({
+      host: process.env.DB_HOST.trim(),
+      port: Number(process.env.DB_PORT) || 3306,
+      user: process.env.DB_USER.trim(),
+      password: process.env.DB_PASSWORD || "",
+      database: process.env.DB_NAME.trim(),
+      connectionLimit: 5,
+      connectTimeout: 1e4
+    });
+  }
+  return pool;
+}
+function getTableName() {
+  const table = process.env.DB_TABLE.trim();
+  if (!/^[A-Za-z0-9_]+$/.test(table)) {
+    throw new Error(`[DB] Invalid DB_TABLE name: ${table}`);
+  }
+  return table;
+}
+async function insertLead(lead) {
+  const row = {
+    first_name: lead.firstName,
+    last_name: lead.lastName,
+    email: lead.email,
+    mobile: lead.phone,
+    dob: lead.dob || null,
+    gender: lead.gender,
+    pan: lead.panNumber,
+    aadhar: lead.aadhaarNumber,
+    address: lead.address,
+    pincode: lead.pinCode,
+    emp_type: lead.employmentType,
+    income: lead.monthlyIncome,
+    company_name: lead.companyName,
+    designation: lead.designation,
+    amount: lead.loanAmount,
+    duration: lead.loanTenure
+  };
+  const columns = Object.keys(row);
+  const sql = `INSERT INTO \`${getTableName()}\` (${columns.map((c) => `\`${c}\``).join(", ")}, \`lead_date\`)
+    VALUES (${columns.map(() => "?").join(", ")}, NOW())`;
+  const [result] = await getPool().execute(sql, Object.values(row));
+  return result.insertId;
+}
+
+// server.ts
 var dotenvResult = import_dotenv.default.config({ path: import_path.default.resolve(process.cwd(), ".env") });
 if (dotenvResult.error) {
   console.warn("[Env] .env file could not be loaded from project root.", dotenvResult.error.message);
@@ -35,9 +90,12 @@ var app = (0, import_express.default)();
 var PORT = Number(process.env.PORT) || 3e3;
 app.use(import_express.default.json());
 app.post("/api/apply", async (req, res) => {
+  let stage = "other";
+  let leadId = null;
   try {
     const {
-      fullName,
+      firstName,
+      lastName,
       email,
       phone,
       dob,
@@ -57,11 +115,36 @@ app.post("/api/apply", async (req, res) => {
       address,
       pinCode
     } = req.body;
-    if (!fullName || !phone || !loanAmount) {
+    if (!firstName || !lastName || !phone || !loanAmount) {
       return res.status(400).json({
         success: false,
-        error: "Missing mandatory fields: full name, phone number, and loan amount are required."
+        error: "Missing mandatory fields: first name, last name, phone number, and loan amount are required."
       });
+    }
+    const fullName = `${firstName} ${lastName}`.trim();
+    if (isDbConfigured()) {
+      stage = "db";
+      leadId = await insertLead({
+        firstName,
+        lastName,
+        email,
+        phone,
+        dob,
+        gender,
+        panNumber,
+        aadhaarNumber,
+        address,
+        pinCode,
+        employmentType,
+        monthlyIncome,
+        companyName,
+        designation,
+        loanAmount,
+        loanTenure
+      });
+      console.log(`[DB] Lead saved with id ${leadId}`);
+    } else {
+      console.log("[DB] Database settings are not configured in .env. Skipping lead insert.");
     }
     const emailHtml = `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
@@ -206,6 +289,7 @@ app.post("/api/apply", async (req, res) => {
     console.log(`Bank: ${bankName}, A/C: ${accountNumber}, IFSC: ${ifscCode}`);
     console.log("-----------------------------------------------------");
     if (isSmtpConfigured) {
+      stage = "email";
       const primaryPort = Number(smtpPort);
       const smtpAttempts = [
         { port: primaryPort, secure: primaryPort === 465, label: "primary" },
@@ -278,10 +362,17 @@ app.post("/api/apply", async (req, res) => {
       });
     }
   } catch (error) {
-    console.error("Error processing application:", error);
+    console.error(`Error processing application (stage: ${stage}):`, error);
+    const errorMessages = {
+      db: "We couldn't save your application right now. Please try again in a few minutes.",
+      email: `Your application has been saved${leadId ? ` (reference #${leadId})` : ""}, but we couldn't notify our team by email. You don't need to submit again; we'll pick it up from our records.`,
+      other: "An internal server error occurred while processing your application. Please try again later."
+    };
     res.status(500).json({
       success: false,
-      error: "An internal server error occurred while processing your application. Please try again later."
+      stage,
+      errorCode: error?.code || null,
+      error: errorMessages[stage]
     });
   }
 });
