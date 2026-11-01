@@ -72,7 +72,9 @@ async function insertLead(lead) {
     company_name: lead.companyName,
     designation: lead.designation,
     amount: lead.loanAmount,
-    duration: lead.loanTenure
+    duration: lead.loanTenure,
+    // New leads always start at status 0
+    status: 0
   };
   const columns = Object.keys(row);
   const sql = `INSERT INTO \`${getTableName()}\` (${columns.map((c) => `\`${c}\``).join(", ")}, \`lead_date\`)

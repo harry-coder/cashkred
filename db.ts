@@ -69,6 +69,8 @@ export async function insertLead(lead: LeadInput) {
     designation: lead.designation,
     amount: lead.loanAmount,
     duration: lead.loanTenure,
+    // New leads always start at status 0
+    status: 0,
   };
 
   const columns = Object.keys(row);
