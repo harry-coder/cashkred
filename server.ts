@@ -3,7 +3,13 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
-import { insertLead, isDbConfigured } from "./db";
+import multer from "multer";
+import crypto from "crypto";
+import fs from "fs";
+import { insertLead, isDbConfigured, getDocsPaths, getLeadByLoanNumber, getLoanDetails, pingDb, saveDocsPaths } from "./db";
+import { isStorageConfigured, uploadFile } from "./storage";
+import { buildAgreementValues, fillAgreement, getTemplatePath, signaturePositions } from "./agreement";
+import { initializeEsign, isSurepassConfigured, uploadEsignFile } from "./surepass";
 
 const dotenvResult = dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 if (dotenvResult.error) {
@@ -15,6 +21,32 @@ const PORT = Number(process.env.PORT) || 3000;
 //const PORT = 3000;
 
 app.use(express.json());
+
+// Health check for uptime monitors: 200 when the server and database are both up, 503 otherwise
+app.get("/api/health", async (_req, res) => {
+  let db: "connected" | "unreachable" | "not_configured" = "not_configured";
+
+  if (isDbConfigured()) {
+    try {
+      await pingDb();
+      db = "connected";
+    } catch (error: any) {
+      // Details stay in the log; the endpoint is public
+      console.error(`[Health] Database check failed (${error?.code || "UNKNOWN"}): ${error?.message || error}`);
+      db = "unreachable";
+    }
+  }
+
+  const healthy = db === "connected";
+  res.set("Cache-Control", "no-store");
+  return res.status(healthy ? 200 : 503).json({
+    status: healthy ? "ok" : "degraded",
+    server: "up",
+    db,
+    uptimeSeconds: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // API route to receive loan applications
 app.post("/api/apply", async (req, res) => {
@@ -345,6 +377,188 @@ app.post("/api/apply", async (req, res) => {
       error: errorMessages[stage]
     });
   }
+});
+
+// Look up a customer's full record by loan number
+app.get("/api/customers/:loanNumber", async (req, res) => {
+  try {
+    const loanNumber = req.params.loanNumber.trim();
+    if (!/^[A-Za-z0-9_-]+$/.test(loanNumber)) {
+      return res.status(400).json({ success: false, error: "A valid loan number is required (letters, numbers, - or _)." });
+    }
+
+    if (!isDbConfigured()) {
+      console.error("[Customers] Database settings are missing in .env.");
+      return res.status(500).json({ success: false, error: "The database is not configured on the server." });
+    }
+
+    const customer = await getLeadByLoanNumber(loanNumber);
+    if (!customer) {
+      return res.status(404).json({ success: false, error: `No customer found for loan number ${loanNumber}.` });
+    }
+
+    return res.json({ success: true, customer });
+  } catch (error: any) {
+    console.error("Error fetching customer:", error);
+    return res.status(500).json({
+      success: false,
+      errorCode: error?.code || null,
+      error: "We couldn't fetch the customer details right now. Please try again in a few minutes."
+    });
+  }
+});
+
+// Internal routes must send ESIGN_API_KEY in the x-api-key header. Hashing first makes the compare constant-time.
+function hasValidApiKey(req: express.Request) {
+  const expected = (process.env.ESIGN_API_KEY || "").trim();
+  const received = String(req.get("x-api-key") || "");
+  if (!expected || !received) return false;
+  const digest = (value: string) => crypto.createHash("sha256").update(value).digest();
+  return crypto.timingSafeEqual(digest(expected), digest(received));
+}
+
+// Fills the loan agreement for a customer and sends it to Surepass for Aadhaar eSign
+app.post("/api/esign/:loanNumber", async (req, res) => {
+  let stage: "db" | "pdf" | "esign" | "other" = "other";
+
+  try {
+    if (!hasValidApiKey(req)) {
+      return res.status(401).json({ success: false, error: "A valid x-api-key header is required." });
+    }
+
+    const loanNumber = req.params.loanNumber.trim();
+    if (!/^[A-Za-z0-9_-]+$/.test(loanNumber)) {
+      return res.status(400).json({ success: false, error: "A valid loan number is required (letters, numbers, - or _)." });
+    }
+
+    if (!isDbConfigured() || !isSurepassConfigured() || !fs.existsSync(getTemplatePath())) {
+      console.error("[eSign] Database settings, SUREPASS_TOKEN or the agreement template is missing.");
+      return res.status(500).json({ success: false, error: "eSign is not configured on the server." });
+    }
+
+    stage = "db";
+    const [customer, loan] = await Promise.all([getLeadByLoanNumber(loanNumber), getLoanDetails(loanNumber)]);
+    if (!customer || !loan) {
+      return res.status(404).json({
+        success: false,
+        error: `No ${!customer ? "customer" : "loan details"} found for loan number ${loanNumber}.`
+      });
+    }
+
+    const { values, missing } = buildAgreementValues(customer, loan);
+    if (missing.length > 0) {
+      return res.status(422).json({ success: false, error: `Missing or invalid values for the agreement: ${missing.join(", ")}.` });
+    }
+
+    stage = "pdf";
+    const { pdf, pageCount } = await fillAgreement(values);
+
+    // The filled PDF holds customer data, so it stays in memory and only goes to Surepass
+    stage = "esign";
+    // Upload first so the document is in place before Surepass emails the signing link
+    const fileId = await uploadEsignFile(pdf, `${loanNumber}-loan-agreement.pdf`);
+    const session = await initializeEsign(
+      fileId,
+      { fullName: values.borrowerName, mobile: values.phone, email: values.email },
+      signaturePositions(pageCount),
+      "Loan agreement"
+    );
+    console.log(`[eSign] Sent loan ${loanNumber} for signing (file_id ${fileId}, client_id ${session.client_id})`);
+
+    return res.json({ success: true, loan_number: loanNumber, client_id: session.client_id, url: session.url });
+  } catch (error: any) {
+    console.error(`Error sending agreement for eSign (stage: ${stage}):`, error?.message || error);
+
+    // Text that doesn't fit or can't be printed is a data problem, not a server fault
+    if (error?.code === "UNPRINTABLE_TEXT" || error?.code === "TEXT_TOO_LONG") {
+      return res.status(422).json({ success: false, stage, error: error.message });
+    }
+
+    const errorMessages = {
+      db: "We couldn't read the loan details right now. Please try again in a few minutes.",
+      pdf: "We couldn't prepare the loan agreement. Please check the template and try again.",
+      esign: "We couldn't send the agreement to Surepass for signing. Please try again in a few minutes.",
+      other: "An internal server error occurred. Please try again later.",
+    };
+
+    return res.status(500).json({ success: false, stage, errorCode: error?.code || null, error: errorMessages[stage] });
+  }
+});
+
+// Document uploads: files go to Firebase Storage under <loan_number>/, paths saved in docs_paths
+const MAX_FILE_SIZE_MB = 5;
+const DOC_FIELDS = ["aadhar", "pan", "bank_statement", "address_proof"].map((name) => ({ name, maxCount: 1 }));
+
+const documentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === "application/pdf") return cb(null, true);
+    cb(new Error(`${file.fieldname}: only PDF files are allowed.`));
+  },
+}).fields(DOC_FIELDS);
+
+app.post("/api/documents", (req, res) => {
+  documentUpload(req, res, async (uploadError: any) => {
+    if (uploadError) {
+      const message =
+        uploadError.code === "LIMIT_FILE_SIZE"
+          ? `${uploadError.field}: each file must be ${MAX_FILE_SIZE_MB} MB or smaller.`
+          : uploadError.code === "LIMIT_UNEXPECTED_FILE"
+            ? `Unexpected or too many files in field "${uploadError.field}". Allowed fields: ${DOC_FIELDS.map((f) => f.name).join(", ")}.`
+            : uploadError.message;
+      return res.status(400).json({ success: false, error: message });
+    }
+
+    try {
+      const loanNumber = String(req.body?.loan_number || "").trim();
+      // Loan number becomes the folder name, so keep it to safe characters
+      if (!/^[A-Za-z0-9_-]+$/.test(loanNumber)) {
+        return res.status(400).json({ success: false, error: "A valid loan_number is required (letters, numbers, - or _)." });
+      }
+
+      const files = (req.files || {}) as Record<string, Express.Multer.File[]>;
+      if (Object.keys(files).length === 0) {
+        return res.status(400).json({ success: false, error: "No documents uploaded." });
+      }
+
+      if (!isDbConfigured() || !isStorageConfigured()) {
+        console.error("[Documents] Database or Firebase Storage settings are missing in .env.");
+        return res.status(500).json({ success: false, error: "Document storage is not configured on the server." });
+      }
+
+      const existing = await getDocsPaths(loanNumber);
+      if (existing === undefined) {
+        return res.status(404).json({ success: false, error: `No application found for loan number ${loanNumber}.` });
+      }
+
+      // Merge with earlier uploads so re-uploading one document keeps the others
+      let docsPaths: Record<string, string> = {};
+      try {
+        docsPaths = existing ? JSON.parse(existing) : {};
+      } catch {
+        console.warn(`[Documents] docs_paths for ${loanNumber} was not valid JSON; replacing it.`);
+      }
+
+      await Promise.all(
+        Object.entries(files).map(async ([field, [file]]) => {
+          docsPaths[field] = await uploadFile(`${loanNumber}/${field}.pdf`, file.buffer, file.mimetype);
+        })
+      );
+
+      await saveDocsPaths(loanNumber, JSON.stringify(docsPaths));
+      console.log(`[Documents] Saved ${Object.keys(files).join(", ")} for loan ${loanNumber}`);
+
+      return res.json({ success: true, loan_number: loanNumber, docs_paths: docsPaths });
+    } catch (error: any) {
+      console.error("Error uploading documents:", error);
+      return res.status(500).json({
+        success: false,
+        errorCode: error?.code || null,
+        error: "We couldn't upload the documents right now. Please try again in a few minutes."
+      });
+    }
+  });
 });
 
 // Serve frontend assets

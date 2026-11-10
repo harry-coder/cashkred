@@ -22,6 +22,11 @@ function getPool() {
   return pool;
 }
 
+// Cheap round trip for health checks; throws if the database can't be reached
+export async function pingDb() {
+  await getPool().query("SELECT 1");
+}
+
 // Table name can't be a query placeholder, so restrict it to a plain identifier.
 function getTableName() {
   const table = process.env.DB_TABLE!.trim();
@@ -79,4 +84,39 @@ export async function insertLead(lead: LeadInput) {
 
   const [result] = await getPool().execute<mysql.ResultSetHeader>(sql, Object.values(row) as any[]);
   return result.insertId;
+}
+
+// Returns the lead's full row, or undefined when no lead has this loan number.
+export async function getLeadByLoanNumber(loanNumber: string) {
+  const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    `SELECT * FROM \`${getTableName()}\` WHERE \`loan_number\` = ? LIMIT 1`,
+    [loanNumber]
+  );
+  return rows[0];
+}
+
+// Sanctioned loan terms, kept in a separate table keyed by loan_number
+export async function getLoanDetails(loanNumber: string) {
+  const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    "SELECT * FROM `tbl_loan_details` WHERE `loan_number` = ? LIMIT 1",
+    [loanNumber]
+  );
+  return rows[0];
+}
+
+// Returns the lead's current docs_paths, or undefined when no lead has this loan number.
+export async function getDocsPaths(loanNumber: string) {
+  const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    `SELECT \`docs_paths\` FROM \`${getTableName()}\` WHERE \`loan_number\` = ? LIMIT 1`,
+    [loanNumber]
+  );
+  if (rows.length === 0) return undefined;
+  return (rows[0].docs_paths as string | null) ?? null;
+}
+
+export async function saveDocsPaths(loanNumber: string, docsPaths: string) {
+  await getPool().execute(
+    `UPDATE \`${getTableName()}\` SET \`docs_paths\` = ? WHERE \`loan_number\` = ?`,
+    [docsPaths, loanNumber]
+  );
 }
