@@ -431,9 +431,16 @@ app.post("/api/esign/:loanNumber", async (req, res) => {
       return res.status(400).json({ success: false, error: "A valid loan number is required (letters, numbers, - or _)." });
     }
 
-    if (!isDbConfigured() || !isSurepassConfigured() || !fs.existsSync(getTemplatePath())) {
-      console.error("[eSign] Database settings, SUREPASS_TOKEN or the agreement template is missing.");
-      return res.status(500).json({ success: false, error: "eSign is not configured on the server." });
+    // Callers are already authenticated here, so name what's missing; the full template path only goes to the log
+    const templatePath = getTemplatePath();
+    const missingConfig = [
+      !isDbConfigured() && "database settings (DB_HOST, DB_USER, DB_NAME, DB_TABLE)",
+      !isSurepassConfigured() && "SUREPASS_TOKEN",
+      !fs.existsSync(templatePath) && "agreement template PDF",
+    ].filter(Boolean);
+    if (missingConfig.length > 0) {
+      console.error(`[eSign] Not configured. Missing: ${missingConfig.join(", ")}. Template path checked: ${templatePath}`);
+      return res.status(500).json({ success: false, error: `eSign is not configured on the server. Missing: ${missingConfig.join(", ")}.` });
     }
 
     stage = "db";

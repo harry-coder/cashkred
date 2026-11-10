@@ -15,9 +15,7 @@ export interface AgreementValues {
   executionDate: string;
   applicationId: string;
   sanctionDate: string;
-  principal: string;
-  principalPlain: string; // page 2 already prints "Rupees" before it
-  interestRate: string;
+  principal: string;  interestRate: string;
   processingFee: string;
   gst: string;
   disbursedAmount: string;
@@ -88,8 +86,8 @@ export function buildAgreementValues(customer: Record<string, any>, loan: Record
     ["sanctionDate", "(today)", today],
     ["applicationId", "loan_number", text(loan.loan_number)],
     ["principal", "tbl_loan_details.approved_amount", formatMoney(loan.approved_amount)],
-    ["principalPlain", "tbl_loan_details.approved_amount", parseNumber(loan.approved_amount)?.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? null],
-    ["interestRate", "tbl_loan_details.roi", roi === null ? null : `${roi}% per day`],
+    // Schedule 1 prints a fixed "1 % Per Day", so any other rate would contradict it in the KFS
+    ["interestRate", "tbl_loan_details.roi (template fixes 1% per day)", roi === 1 ? "1% per day" : null],
     ["processingFee", "tbl_loan_details.admin_fee", formatMoney(loan.admin_fee)],
     ["gst", "tbl_loan_details.gst", formatMoney(loan.gst)],
     ["disbursedAmount", "tbl_loan_details.disbursed_amount", formatMoney(loan.disbursed_amount)],
@@ -110,42 +108,43 @@ interface Slot {
   size: number;
   maxWidth: number;
   maxLines?: number;
-  font: "body" | "table";
+  // Template text in the cell to hide before writing, as [left, top, right, bottom] from the top of the page
+  cover?: [number, number, number, number];
 }
 
-// Positions of the empty cells in the template, in PDF points (measured from the Word export)
-const SCHEDULE = (y: number): Slot => ({ page: 7, x: 282, y, size: 11, maxWidth: 240, font: "table" });
-const KFS = (y: number): Slot => ({ page: 8, x: 304.9, y, size: 8.5, maxWidth: 236, font: "table" });
+// Positions of the empty cells in templates/loan-agreement.pdf, in PDF points.
+// y values are the baselines of each row's label, so values line up with them.
+const SCHEDULE = (y: number): Slot => ({ page: 7, x: 282.5, y, size: 11, maxWidth: 239 });
+const KFS = (y: number): Slot => ({ page: 8, x: 305, y, size: 8.5, maxWidth: 238 });
 
+// Schedule 1's "Rate of interest" (1 % Per Day) and page 2's "12000.00" are printed in the template and left as is
 const SLOTS: [keyof AgreementValues, Slot][] = [
-  // Position still to be confirmed against the real blank PDF's gap in "(Rupees ____ only)"
-  ["principalPlain", { page: 2, x: 51.6, y: 273, size: 9.5, maxWidth: 70, font: "body" }],
+  ["borrowerName", SCHEDULE(292.6)],
+  // The address row is two lines tall (295.5 to 320.5), so start higher than the label
+  ["address", { ...SCHEDULE(305.5), maxLines: 2 }],
+  ["pan", SCHEDULE(331.3)],
+  ["email", SCHEDULE(345.6)],
+  ["phone", SCHEDULE(359.8)],
+  ["executionDate", SCHEDULE(411)],
+  ["applicationId", SCHEDULE(425.7)],
+  ["sanctionDate", SCHEDULE(439.9)],
+  ["principal", SCHEDULE(454.2)],
+  ["processingFee", SCHEDULE(482.7)],
+  ["gst", SCHEDULE(496.9)],
+  ["disbursedAmount", SCHEDULE(511.2)],
+  ["repaymentDate", SCHEDULE(525.4)],
+  ["repaymentAmount", SCHEDULE(539.7)],
+  // The template prints "Days" with no number; replace it with e.g. "22 days"
+  ["tenure", { ...SCHEDULE(553.9), cover: [280, 543.5, 312, 556.5] }],
 
-  ["borrowerName", { ...SCHEDULE(322.2), x: 284.8 }],
-  ["address", { ...SCHEDULE(335), x: 284.8, maxLines: 3 }],
-  ["pan", { ...SCHEDULE(371.8), x: 284.8 }],
-  ["email", { ...SCHEDULE(408.7), x: 284.8 }],
-  ["phone", { ...SCHEDULE(423), x: 284.8 }],
-  ["executionDate", SCHEDULE(477.1)],
-  ["applicationId", SCHEDULE(491.1)],
-  ["sanctionDate", SCHEDULE(505.5)],
-  ["principal", SCHEDULE(519.7)],
-  ["interestRate", SCHEDULE(534)],
-  ["processingFee", SCHEDULE(548.4)],
-  ["gst", SCHEDULE(562.8)],
-  ["disbursedAmount", SCHEDULE(577.1)],
-  ["repaymentDate", SCHEDULE(591.2)],
-  ["repaymentAmount", SCHEDULE(605.6)],
-  ["tenure", SCHEDULE(620)],
-
-  ["principal", KFS(140.5)],
-  ["interestRate", KFS(151.1)],
-  ["processingFee", KFS(161.7)],
-  ["gst", KFS(172.1)],
-  ["disbursedAmount", KFS(182.4)],
-  ["tenure", KFS(193)],
-  ["repaymentDate", KFS(203.5)],
-  ["repaymentAmount", KFS(214)],
+  ["principal", KFS(149.4)],
+  ["interestRate", KFS(160)],
+  ["processingFee", KFS(170.5)],
+  ["gst", KFS(180.9)],
+  ["disbursedAmount", KFS(191.4)],
+  ["tenure", KFS(202)],
+  ["repaymentDate", KFS(212.5)],
+  ["repaymentAmount", KFS(222.9)],
 ];
 
 // Word-wraps text to the slot width, shrinking the font if it still doesn't fit
@@ -170,10 +169,8 @@ function layoutText(text: string, font: PDFFont, slot: Slot) {
 
 export async function fillAgreement(values: AgreementValues) {
   const pdf = await PDFDocument.load(await fs.readFile(getTemplatePath()));
-  const fonts = {
-    body: await pdf.embedFont(StandardFonts.Helvetica),
-    table: await pdf.embedFont(StandardFonts.TimesRoman),
-  };
+  // The template's tables are set in Times New Roman
+  const font = await pdf.embedFont(StandardFonts.TimesRoman);
   const pages = pdf.getPages();
 
   for (const [key, slot] of SLOTS) {
@@ -186,9 +183,14 @@ export async function fillAgreement(values: AgreementValues) {
       throw Object.assign(new Error(`${key} contains characters that can't be printed on the agreement.`), { code: "UNPRINTABLE_TEXT" });
     }
 
-    const layout = layoutText(text, fonts[slot.font], slot);
+    const layout = layoutText(text, font, slot);
     if (!layout) {
       throw Object.assign(new Error(`${key} is too long to fit on the agreement.`), { code: "TEXT_TOO_LONG" });
+    }
+
+    if (slot.cover) {
+      const [left, top, right, bottom] = slot.cover;
+      page.drawRectangle({ x: left, y: page.getHeight() - bottom, width: right - left, height: bottom - top, color: rgb(1, 1, 1) });
     }
 
     layout.lines.forEach((line, i) => {
@@ -196,7 +198,7 @@ export async function fillAgreement(values: AgreementValues) {
         x: slot.x,
         y: page.getHeight() - slot.y - i * layout.size,
         size: layout.size,
-        font: fonts[slot.font],
+        font,
         color: rgb(0, 0, 0),
       });
     });
