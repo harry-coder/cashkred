@@ -1,24 +1,22 @@
-// Surepass Aadhaar eSign: upload the PDF, then start a signing session for it.
+// Surepass Aadhaar eSign, following Surepass's integration guide (Flow B, client pre-uploads PDF):
+// initialize with pdf_pre_uploaded=true -> get-upload-link -> post the PDF to it -> signer opens url
 export function isSurepassConfigured() {
   return !!process.env.SUREPASS_TOKEN;
 }
 
-// Surepass has no eSign sandbox, so production is the default
 function getBaseUrl() {
-  return (process.env.SUREPASS_BASE_URL || "https://kyc-api.surepass.app").trim().replace(/\/+$/, "");
+  return (process.env.SUREPASS_BASE_URL || "https://kyc-api.surepass.io").trim().replace(/\/+$/, "");
 }
 
-// Surepass wraps every response as { success, data, message, message_code }
-async function callSurepass<T>(endpoint: string, body: FormData | object): Promise<T> {
-  const isForm = body instanceof FormData;
+// Surepass wraps every response as { success, data, message, message_code }. A GET is sent when body is omitted.
+async function callSurepass<T>(endpoint: string, body?: object): Promise<T> {
   const response = await fetch(`${getBaseUrl()}${endpoint}`, {
-    method: "POST",
-    // For FormData, fetch sets the multipart Content-Type (with boundary) itself
+    method: body ? "POST" : "GET",
     headers: {
       Authorization: `Bearer ${process.env.SUREPASS_TOKEN!.trim()}`,
-      ...(isForm ? {} : { "Content-Type": "application/json" }),
+      ...(body ? { "Content-Type": "application/json" } : {}),
     },
-    body: isForm ? body : JSON.stringify(body),
+    body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(30000),
   });
 
@@ -26,22 +24,10 @@ async function callSurepass<T>(endpoint: string, body: FormData | object): Promi
   if (!response.ok || !json?.success) {
     const error: any = new Error(`[Surepass] ${endpoint} failed (HTTP ${response.status}): ${json?.message || response.statusText}`);
     error.code = json?.message_code || `HTTP_${response.status}`;
+    error.status = response.status;
     throw error;
   }
   return json.data as T;
-}
-
-// Returns the file_id that initializeEsign signs
-export async function uploadEsignFile(pdf: Uint8Array, fileName: string) {
-  const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(pdf)], { type: "application/pdf" }), fileName);
-  form.append("file_name", fileName);
-
-  const data = await callSurepass<{ client_id: string; file_id: string; uploaded: boolean }>("/api/v1/files/esign/upload", form);
-  if (!data?.uploaded || !data.file_id) {
-    throw new Error(`[Surepass] ${fileName} was not uploaded.`);
-  }
-  return data.file_id;
 }
 
 export interface EsignSigner {
@@ -60,27 +46,59 @@ export interface EsignSession {
   url: string;
 }
 
-export async function initializeEsign(fileId: string, signer: EsignSigner, positions: SignaturePositions, reason: string) {
+export async function initializeEsign(signer: EsignSigner, positions: SignaturePositions, reason: string) {
   return callSurepass<EsignSession>("/api/v1/esign/initialize", {
-    file_id: fileId,
+    // Our server uploads the PDF right after this call; the signer never uploads anything
     pdf_pre_uploaded: true,
     send_email: true,
+    sign_type: "aadhaar",
     config: {
-      reason,
       positions,
-      // Every signature must go through Aadhaar OTP; no virtual or uploaded signatures
+      reason,
+      allow_download: true,
+      skip_otp: false,
+      skip_email: false,
+      // send_email alone didn't deliver on production; this forces Surepass to email the signer
+      always_send_email: true,
+      name_match: { match: true, score: 80 },
+      // Not in Surepass's guide but in their API reference: no virtual signatures, no changing the mobile
       accept_virtual_sign: false,
       allow_virtual_sign_upload: false,
-      skip_otp: false,
       allow_number_change: false,
-      allow_download: true,
-      name_match: { match: true, score: 80 },
     },
+    // Required by Surepass's guide
     prefill_options: {
       full_name: signer.fullName,
       mobile_number: signer.mobile,
       user_email: signer.email,
     },
-    sign_type: "aadhaar",
   });
+}
+
+// Gets a pre-signed storage form for the session and posts the PDF to it, using the fields exactly as returned
+export async function uploadEsignPdf(clientId: string, pdf: Uint8Array, fileName: string) {
+  const link = await callSurepass<{ link_generated: boolean; url: string; fields: Record<string, string> }>(
+    "/api/v1/esign/get-upload-link",
+    { client_id: clientId }
+  );
+  if (!link?.link_generated || !link.url || !link.fields) {
+    throw new Error(`[Surepass] Upload link was not generated for ${clientId}.`);
+  }
+
+  const form = new FormData();
+  for (const [name, value] of Object.entries(link.fields)) form.append(name, value);
+  // Storage ignores any form field sent after the file, so the file goes last
+  form.append("file", new Blob([new Uint8Array(pdf)], { type: "application/pdf" }), fileName);
+
+  const response = await fetch(link.url, { method: "POST", body: form, signal: AbortSignal.timeout(30000) });
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => "")).slice(0, 300);
+    throw new Error(`[Surepass] PDF upload to storage failed for ${clientId} (HTTP ${response.status}): ${detail}`);
+  }
+}
+
+// Step 4 of the guide: returns Surepass's data (including the download URL) once signing is complete.
+// Surepass answers 422 while the signed PDF isn't generated yet, and 404 for an unknown client_id.
+export async function getSignedDocument(clientId: string) {
+  return callSurepass<Record<string, unknown>>(`/api/v1/esign/get-signed-document/${encodeURIComponent(clientId)}`);
 }

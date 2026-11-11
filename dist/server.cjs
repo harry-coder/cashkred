@@ -110,6 +110,13 @@ async function getDocsPaths(loanNumber) {
   if (rows.length === 0) return void 0;
   return rows[0].docs_paths ?? null;
 }
+async function saveEsignClientId(loanNumber, clientId) {
+  const [result] = await getPool().execute(
+    `UPDATE \`${getTableName()}\` SET \`esign_client_id\` = ? WHERE \`loan_number\` = ?`,
+    [clientId, loanNumber]
+  );
+  return result.affectedRows > 0;
+}
 async function saveDocsPaths(loanNumber, docsPaths) {
   await getPool().execute(
     `UPDATE \`${getTableName()}\` SET \`docs_paths\` = ? WHERE \`loan_number\` = ?`,
@@ -297,61 +304,74 @@ function isSurepassConfigured() {
   return !!process.env.SUREPASS_TOKEN;
 }
 function getBaseUrl() {
-  return (process.env.SUREPASS_BASE_URL || "https://kyc-api.surepass.app").trim().replace(/\/+$/, "");
+  return (process.env.SUREPASS_BASE_URL || "https://kyc-api.surepass.io").trim().replace(/\/+$/, "");
 }
 async function callSurepass(endpoint, body) {
-  const isForm = body instanceof FormData;
   const response = await fetch(`${getBaseUrl()}${endpoint}`, {
-    method: "POST",
-    // For FormData, fetch sets the multipart Content-Type (with boundary) itself
+    method: body ? "POST" : "GET",
     headers: {
       Authorization: `Bearer ${process.env.SUREPASS_TOKEN.trim()}`,
-      ...isForm ? {} : { "Content-Type": "application/json" }
+      ...body ? { "Content-Type": "application/json" } : {}
     },
-    body: isForm ? body : JSON.stringify(body),
+    body: body ? JSON.stringify(body) : void 0,
     signal: AbortSignal.timeout(3e4)
   });
   const json = await response.json().catch(() => null);
   if (!response.ok || !json?.success) {
     const error = new Error(`[Surepass] ${endpoint} failed (HTTP ${response.status}): ${json?.message || response.statusText}`);
     error.code = json?.message_code || `HTTP_${response.status}`;
+    error.status = response.status;
     throw error;
   }
   return json.data;
 }
-async function uploadEsignFile(pdf, fileName) {
-  const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(pdf)], { type: "application/pdf" }), fileName);
-  form.append("file_name", fileName);
-  const data = await callSurepass("/api/v1/files/esign/upload", form);
-  if (!data?.uploaded || !data.file_id) {
-    throw new Error(`[Surepass] ${fileName} was not uploaded.`);
-  }
-  return data.file_id;
-}
-async function initializeEsign(fileId, signer, positions, reason) {
+async function initializeEsign(signer, positions, reason) {
   return callSurepass("/api/v1/esign/initialize", {
-    file_id: fileId,
+    // Our server uploads the PDF right after this call; the signer never uploads anything
     pdf_pre_uploaded: true,
     send_email: true,
+    sign_type: "aadhaar",
     config: {
-      reason,
       positions,
-      // Every signature must go through Aadhaar OTP; no virtual or uploaded signatures
+      reason,
+      allow_download: true,
+      skip_otp: false,
+      skip_email: false,
+      // send_email alone didn't deliver on production; this forces Surepass to email the signer
+      always_send_email: true,
+      name_match: { match: true, score: 80 },
+      // Not in Surepass's guide but in their API reference: no virtual signatures, no changing the mobile
       accept_virtual_sign: false,
       allow_virtual_sign_upload: false,
-      skip_otp: false,
-      allow_number_change: false,
-      allow_download: true,
-      name_match: { match: true, score: 80 }
+      allow_number_change: false
     },
+    // Required by Surepass's guide
     prefill_options: {
       full_name: signer.fullName,
       mobile_number: signer.mobile,
       user_email: signer.email
-    },
-    sign_type: "aadhaar"
+    }
   });
+}
+async function uploadEsignPdf(clientId, pdf, fileName) {
+  const link = await callSurepass(
+    "/api/v1/esign/get-upload-link",
+    { client_id: clientId }
+  );
+  if (!link?.link_generated || !link.url || !link.fields) {
+    throw new Error(`[Surepass] Upload link was not generated for ${clientId}.`);
+  }
+  const form = new FormData();
+  for (const [name, value] of Object.entries(link.fields)) form.append(name, value);
+  form.append("file", new Blob([new Uint8Array(pdf)], { type: "application/pdf" }), fileName);
+  const response = await fetch(link.url, { method: "POST", body: form, signal: AbortSignal.timeout(3e4) });
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => "")).slice(0, 300);
+    throw new Error(`[Surepass] PDF upload to storage failed for ${clientId} (HTTP ${response.status}): ${detail}`);
+  }
+}
+async function getSignedDocument(clientId) {
+  return callSurepass(`/api/v1/esign/get-signed-document/${encodeURIComponent(clientId)}`);
 }
 
 // server.ts
@@ -710,6 +730,7 @@ function hasValidApiKey(req) {
 }
 app.post("/api/esign/:loanNumber", async (req, res) => {
   let stage = "other";
+  let clientId = null;
   try {
     if (!hasValidApiKey(req)) {
       return res.status(401).json({ success: false, error: "A valid x-api-key header is required." });
@@ -740,20 +761,41 @@ app.post("/api/esign/:loanNumber", async (req, res) => {
     if (missing.length > 0) {
       return res.status(422).json({ success: false, error: `Missing or invalid values for the agreement: ${missing.join(", ")}.` });
     }
+    const logValues = (process.env.ESIGN_LOG_VALUES || "").trim().toLowerCase() === "true";
+    if (logValues) {
+      console.log(`[eSign] Agreement values for loan ${loanNumber}:
+${JSON.stringify(values, null, 2)}`);
+    }
     stage = "pdf";
     const { pdf, pageCount } = await fillAgreement(values);
     stage = "esign";
-    const fileId = await uploadEsignFile(pdf, `${loanNumber}-loan-agreement.pdf`);
     const session = await initializeEsign(
-      fileId,
       { fullName: values.borrowerName, mobile: values.phone, email: values.email },
       signaturePositions(pageCount),
       "Loan agreement"
     );
-    console.log(`[eSign] Sent loan ${loanNumber} for signing (file_id ${fileId}, client_id ${session.client_id})`);
-    return res.json({ success: true, loan_number: loanNumber, client_id: session.client_id, url: session.url });
+    clientId = session.client_id;
+    await uploadEsignPdf(session.client_id, pdf, `${loanNumber}-loan-agreement.pdf`);
+    console.log(`[eSign] Sent loan ${loanNumber} for signing (${pageCount} pages, client_id ${session.client_id})`);
+    if (logValues) {
+      console.log(`[eSign] Surepass asked to email ${values.email} (mobile ${values.phone}) with send_email and always_send_email on`);
+    }
+    let clientIdSaved = false;
+    try {
+      clientIdSaved = await saveEsignClientId(loanNumber, session.client_id);
+      if (!clientIdSaved) console.error(`[eSign] No user_info row updated with client_id ${session.client_id} for loan ${loanNumber}.`);
+    } catch (saveError) {
+      console.error(`[eSign] Couldn't save client_id ${session.client_id} for loan ${loanNumber}: ${saveError?.message || saveError}`);
+    }
+    return res.json({
+      success: true,
+      loan_number: loanNumber,
+      client_id: session.client_id,
+      client_id_saved: clientIdSaved,
+      url: session.url
+    });
   } catch (error) {
-    console.error(`Error sending agreement for eSign (stage: ${stage}):`, error?.message || error);
+    console.error(`Error sending agreement for eSign (stage: ${stage}${clientId ? `, client_id ${clientId}` : ""}):`, error?.message || error);
     if (error?.code === "UNPRINTABLE_TEXT" || error?.code === "TEXT_TOO_LONG") {
       return res.status(422).json({ success: false, stage, error: error.message });
     }
@@ -763,7 +805,32 @@ app.post("/api/esign/:loanNumber", async (req, res) => {
       esign: "We couldn't send the agreement to Surepass for signing. Please try again in a few minutes.",
       other: "An internal server error occurred. Please try again later."
     };
-    return res.status(500).json({ success: false, stage, errorCode: error?.code || null, error: errorMessages[stage] });
+    return res.status(500).json({ success: false, stage, client_id: clientId, errorCode: error?.code || null, error: errorMessages[stage] });
+  }
+});
+app.get("/api/esign/:clientId/signed-document", async (req, res) => {
+  try {
+    if (!hasValidApiKey(req)) {
+      return res.status(401).json({ success: false, error: "A valid x-api-key header is required." });
+    }
+    const clientId = req.params.clientId.trim();
+    if (!/^esign_[A-Za-z0-9]+$/.test(clientId)) {
+      return res.status(400).json({ success: false, error: "A valid Surepass client_id (esign_...) is required." });
+    }
+    if (!isSurepassConfigured()) {
+      return res.status(500).json({ success: false, error: "eSign is not configured on the server. Missing: SUREPASS_TOKEN." });
+    }
+    const document = await getSignedDocument(clientId);
+    return res.json({ success: true, client_id: clientId, ...document });
+  } catch (error) {
+    if (error?.status === 422) {
+      return res.status(422).json({ success: false, error: "The customer hasn't finished signing yet." });
+    }
+    if (error?.status === 404) {
+      return res.status(404).json({ success: false, error: "Surepass has no eSign session with this client_id." });
+    }
+    console.error("Error fetching signed document:", error?.message || error);
+    return res.status(500).json({ success: false, errorCode: error?.code || null, error: "We couldn't fetch the signed document right now." });
   }
 });
 var MAX_FILE_SIZE_MB = 5;

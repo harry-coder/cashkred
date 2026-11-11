@@ -6,10 +6,10 @@ import dotenv from "dotenv";
 import multer from "multer";
 import crypto from "crypto";
 import fs from "fs";
-import { insertLead, isDbConfigured, getDocsPaths, getLeadByLoanNumber, getLoanDetails, pingDb, saveDocsPaths } from "./db";
+import { insertLead, isDbConfigured, getDocsPaths, getLeadByLoanNumber, getLoanDetails, pingDb, saveDocsPaths, saveEsignClientId } from "./db";
 import { isStorageConfigured, uploadFile } from "./storage";
 import { buildAgreementValues, fillAgreement, getTemplatePath, signaturePositions } from "./agreement";
-import { initializeEsign, isSurepassConfigured, uploadEsignFile } from "./surepass";
+import { getSignedDocument, initializeEsign, isSurepassConfigured, uploadEsignPdf } from "./surepass";
 
 const dotenvResult = dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 if (dotenvResult.error) {
@@ -420,6 +420,7 @@ function hasValidApiKey(req: express.Request) {
 // Fills the loan agreement for a customer and sends it to Surepass for Aadhaar eSign
 app.post("/api/esign/:loanNumber", async (req, res) => {
   let stage: "db" | "pdf" | "esign" | "other" = "other";
+  let clientId: string | null = null;
 
   try {
     if (!hasValidApiKey(req)) {
@@ -457,24 +458,48 @@ app.post("/api/esign/:loanNumber", async (req, res) => {
       return res.status(422).json({ success: false, error: `Missing or invalid values for the agreement: ${missing.join(", ")}.` });
     }
 
+    // Values include PAN, address and phone, so they're only logged when ESIGN_LOG_VALUES=true
+    const logValues = (process.env.ESIGN_LOG_VALUES || "").trim().toLowerCase() === "true";
+    if (logValues) {
+      console.log(`[eSign] Agreement values for loan ${loanNumber}:\n${JSON.stringify(values, null, 2)}`);
+    }
+
     stage = "pdf";
     const { pdf, pageCount } = await fillAgreement(values);
 
     // The filled PDF holds customer data, so it stays in memory and only goes to Surepass
     stage = "esign";
-    // Upload first so the document is in place before Surepass emails the signing link
-    const fileId = await uploadEsignFile(pdf, `${loanNumber}-loan-agreement.pdf`);
     const session = await initializeEsign(
-      fileId,
       { fullName: values.borrowerName, mobile: values.phone, email: values.email },
       signaturePositions(pageCount),
       "Loan agreement"
     );
-    console.log(`[eSign] Sent loan ${loanNumber} for signing (file_id ${fileId}, client_id ${session.client_id})`);
+    clientId = session.client_id;
+    await uploadEsignPdf(session.client_id, pdf, `${loanNumber}-loan-agreement.pdf`);
+    console.log(`[eSign] Sent loan ${loanNumber} for signing (${pageCount} pages, client_id ${session.client_id})`);
+    if (logValues) {
+      console.log(`[eSign] Surepass asked to email ${values.email} (mobile ${values.phone}) with send_email and always_send_email on`);
+    }
 
-    return res.json({ success: true, loan_number: loanNumber, client_id: session.client_id, url: session.url });
+    // The customer already has the signing link at this point, so a failed save is reported but doesn't fail the request
+    let clientIdSaved = false;
+    try {
+      clientIdSaved = await saveEsignClientId(loanNumber, session.client_id);
+      if (!clientIdSaved) console.error(`[eSign] No user_info row updated with client_id ${session.client_id} for loan ${loanNumber}.`);
+    } catch (saveError: any) {
+      console.error(`[eSign] Couldn't save client_id ${session.client_id} for loan ${loanNumber}: ${saveError?.message || saveError}`);
+    }
+
+    return res.json({
+      success: true,
+      loan_number: loanNumber,
+      client_id: session.client_id,
+      client_id_saved: clientIdSaved,
+      url: session.url,
+    });
   } catch (error: any) {
-    console.error(`Error sending agreement for eSign (stage: ${stage}):`, error?.message || error);
+    // A client_id here means the session exists (and may have been emailed) but has no PDF
+    console.error(`Error sending agreement for eSign (stage: ${stage}${clientId ? `, client_id ${clientId}` : ""}):`, error?.message || error);
 
     // Text that doesn't fit or can't be printed is a data problem, not a server fault
     if (error?.code === "UNPRINTABLE_TEXT" || error?.code === "TEXT_TOO_LONG") {
@@ -488,7 +513,37 @@ app.post("/api/esign/:loanNumber", async (req, res) => {
       other: "An internal server error occurred. Please try again later.",
     };
 
-    return res.status(500).json({ success: false, stage, errorCode: error?.code || null, error: errorMessages[stage] });
+    return res.status(500).json({ success: false, stage, client_id: clientId, errorCode: error?.code || null, error: errorMessages[stage] });
+  }
+});
+
+// Step 4 of Surepass's guide: fetch the signed agreement once the customer has finished signing
+app.get("/api/esign/:clientId/signed-document", async (req, res) => {
+  try {
+    if (!hasValidApiKey(req)) {
+      return res.status(401).json({ success: false, error: "A valid x-api-key header is required." });
+    }
+
+    const clientId = req.params.clientId.trim();
+    if (!/^esign_[A-Za-z0-9]+$/.test(clientId)) {
+      return res.status(400).json({ success: false, error: "A valid Surepass client_id (esign_...) is required." });
+    }
+    if (!isSurepassConfigured()) {
+      return res.status(500).json({ success: false, error: "eSign is not configured on the server. Missing: SUREPASS_TOKEN." });
+    }
+
+    const document = await getSignedDocument(clientId);
+    return res.json({ success: true, client_id: clientId, ...document });
+  } catch (error: any) {
+    // Surepass: 422 = not signed yet, 404 = unknown client_id
+    if (error?.status === 422) {
+      return res.status(422).json({ success: false, error: "The customer hasn't finished signing yet." });
+    }
+    if (error?.status === 404) {
+      return res.status(404).json({ success: false, error: "Surepass has no eSign session with this client_id." });
+    }
+    console.error("Error fetching signed document:", error?.message || error);
+    return res.status(500).json({ success: false, errorCode: error?.code || null, error: "We couldn't fetch the signed document right now." });
   }
 });
 

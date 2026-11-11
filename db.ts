@@ -114,6 +114,15 @@ export async function getDocsPaths(loanNumber: string) {
   return (rows[0].docs_paths as string | null) ?? null;
 }
 
+// Surepass eSign session for the lead, needed later to fetch the signed agreement
+export async function saveEsignClientId(loanNumber: string, clientId: string) {
+  const [result] = await getPool().execute<mysql.ResultSetHeader>(
+    `UPDATE \`${getTableName()}\` SET \`esign_client_id\` = ? WHERE \`loan_number\` = ?`,
+    [clientId, loanNumber]
+  );
+  return result.affectedRows > 0;
+}
+
 export async function saveDocsPaths(loanNumber: string, docsPaths: string) {
   await getPool().execute(
     `UPDATE \`${getTableName()}\` SET \`docs_paths\` = ? WHERE \`loan_number\` = ?`,
