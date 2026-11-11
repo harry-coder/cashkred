@@ -50,7 +50,8 @@ export async function initializeEsign(signer: EsignSigner, positions: SignatureP
   return callSurepass<EsignSession>("/api/v1/esign/initialize", {
     // Our server uploads the PDF right after this call; the signer never uploads anything
     pdf_pre_uploaded: true,
-    send_email: true,
+    // Surepass doesn't email or SMS the signer; our server emails the signing link itself
+    send_email: false,
     sign_type: "aadhaar",
     config: {
       positions,
@@ -58,8 +59,6 @@ export async function initializeEsign(signer: EsignSigner, positions: SignatureP
       allow_download: true,
       skip_otp: false,
       skip_email: false,
-      // send_email alone didn't deliver on production; this forces Surepass to email the signer
-      always_send_email: true,
       name_match: { match: true, score: 80 },
       // Not in Surepass's guide but in their API reference: no virtual signatures, no changing the mobile
       accept_virtual_sign: false,

@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 import multer from "multer";
 import crypto from "crypto";
@@ -10,6 +9,8 @@ import { insertLead, isDbConfigured, getDocsPaths, getLeadByLoanNumber, getLoanD
 import { isStorageConfigured, uploadFile } from "./storage";
 import { buildAgreementValues, fillAgreement, getTemplatePath, signaturePositions } from "./agreement";
 import { getSignedDocument, initializeEsign, isSurepassConfigured, uploadEsignPdf } from "./surepass";
+import { getNotificationEmails, getSenderAddress, isSmtpConfigured, logSmtpConfig, sendMail } from "./mailer";
+import { getSigningLinkExpiry, isSurepassSigningUrl, sendSigningEmail } from "./esign-email";
 
 const dotenvResult = dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 if (dotenvResult.error) {
@@ -229,39 +230,8 @@ app.post("/api/apply", async (req, res) => {
     `;
 
     // Configure Mail Server
-    const smtpHost = (process.env.SMTP_HOST || process.env.SMTP_SERVER || "").trim();
-    const smtpPort = (process.env.SMTP_PORT || "587").trim();
-    const smtpUser = (process.env.SMTP_USER || process.env.SMTP_USERNAME || "").trim();
-    const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim();
-    const allowSelfSigned = (process.env.SMTP_ALLOW_SELF_SIGNED || "false").trim().toLowerCase() === "true";
-    const smtpDebug = (process.env.SMTP_DEBUG || "false").trim().toLowerCase() === "true";
-    const notificationEmails = (process.env.NOTIFICATION_EMAIL || "applications@cashkred.com")
-      .split(/[,;\n]+/)
-      .map((emailAddress) => emailAddress.trim())
-      .filter(Boolean);
-    const invalidNotificationEmails = notificationEmails.filter(
-      (emailAddress) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress)
-    );
-
-    if (notificationEmails.length === 0 || invalidNotificationEmails.length > 0) {
-      throw new Error(
-        `Invalid NOTIFICATION_EMAIL value. Check these addresses: ${invalidNotificationEmails.join(", ") || "none provided"}`
-      );
-    }
-
-    const isSmtpConfigured = !!(smtpHost && smtpUser && smtpPass);
-    console.log(`SMTP Configured: ${isSmtpConfigured ? "Yes" : "No"}`);
-    if (!isSmtpConfigured) {
-      console.log(
-        `[SMTP Debug] Missing values -> host:${smtpHost ? "set" : "missing"}, user:${smtpUser ? "set" : "missing"}, pass:${smtpPass ? "set" : "missing"}`
-      );
-    }
-    if (allowSelfSigned) {
-      console.log("[SMTP Warning] SMTP_ALLOW_SELF_SIGNED=true. TLS certificate verification is relaxed.");
-    }
-    if (smtpDebug) {
-      console.log("[SMTP Debug] Verbose SMTP protocol logs enabled (SMTP_DEBUG=true).");
-    }
+    const notificationEmails = getNotificationEmails();
+    logSmtpConfig();
 
     console.log("------------------ NEW APPLICATION ------------------");
     console.log(`Full Name: ${fullName}`);
@@ -276,74 +246,14 @@ app.post("/api/apply", async (req, res) => {
     console.log(`Bank: ${bankName}, A/C: ${accountNumber}, IFSC: ${ifscCode}`);
     console.log("-----------------------------------------------------");
 
-    if (isSmtpConfigured) {
+    if (isSmtpConfigured()) {
       stage = "email";
-      const primaryPort = Number(smtpPort);
-      const smtpAttempts = [
-        { port: primaryPort, secure: primaryPort === 465, label: "primary" },
-        { port: 587, secure: false, label: "fallback-starttls" },
-        { port: 465, secure: true, label: "fallback-ssl" },
-      ].filter(
-        (attempt, index, arr) =>
-          Number.isFinite(attempt.port) && arr.findIndex((a) => a.port === attempt.port && a.secure === attempt.secure) === index
-      );
-
-      let sent = false;
-      let lastSmtpError: unknown;
-
-      for (const attempt of smtpAttempts) {
-        try {
-          console.log(
-            `[SMTP] Attempt ${attempt.label}: host=${smtpHost}, port=${attempt.port}, secure=${attempt.secure ? "true" : "false"}`
-          );
-
-          const transporter = nodemailer.createTransport({
-            host: smtpHost,
-            port: attempt.port,
-            secure: attempt.secure,
-            requireTLS: !attempt.secure,
-            auth: {
-              user: smtpUser,
-              pass: smtpPass,
-            },
-            logger: smtpDebug,
-            debug: smtpDebug,
-            connectionTimeout: 15000,
-            greetingTimeout: 10000,
-            socketTimeout: 20000,
-            tls: {
-              minVersion: "TLSv1.2",
-              servername: smtpHost,
-              rejectUnauthorized: !allowSelfSigned,
-            },
-          });
-
-          // Verify SMTP handshake before sending to fail fast with better diagnostics.
-          await transporter.verify();
-
-          await transporter.sendMail({
-            from: `"${fullName} via CashKred" <${smtpUser}>`,
-            to: notificationEmails.join(", "),
-            subject: `🚨 [New Application] - ₹${Number(loanAmount).toLocaleString('en-IN')} requested by ${fullName}`,
-            html: emailHtml,
-          });
-
-          sent = true;
-          break;
-        } catch (smtpError: any) {
-          lastSmtpError = smtpError;
-          console.error(
-            `[SMTP] Attempt ${attempt.label} failed (${smtpError?.code || "UNKNOWN"}): ${smtpError?.message || smtpError}`
-          );
-          if ((smtpError?.message || "").toLowerCase().includes("self-signed certificate") && !allowSelfSigned) {
-            console.error("[SMTP Hint] If your provider/network uses a self-signed chain, set SMTP_ALLOW_SELF_SIGNED=true in .env.");
-          }
-        }
-      }
-
-      if (!sent) {
-        throw lastSmtpError;
-      }
+      await sendMail({
+        from: `"${fullName} via CashKred" <${getSenderAddress()}>`,
+        to: notificationEmails.join(", "),
+        subject: `🚨 [New Application] - ₹${Number(loanAmount).toLocaleString('en-IN')} requested by ${fullName}`,
+        html: emailHtml,
+      });
 
       return res.json({
         success: true,
@@ -438,6 +348,8 @@ app.post("/api/esign/:loanNumber", async (req, res) => {
       !isDbConfigured() && "database settings (DB_HOST, DB_USER, DB_NAME, DB_TABLE)",
       !isSurepassConfigured() && "SUREPASS_TOKEN",
       !fs.existsSync(templatePath) && "agreement template PDF",
+      // We email the signing link ourselves, so don't create a session we can't deliver
+      !isSmtpConfigured() && "SMTP settings (SMTP_HOST, SMTP_USER, SMTP_PASS)",
     ].filter(Boolean);
     if (missingConfig.length > 0) {
       console.error(`[eSign] Not configured. Missing: ${missingConfig.join(", ")}. Template path checked: ${templatePath}`);
@@ -477,11 +389,8 @@ app.post("/api/esign/:loanNumber", async (req, res) => {
     clientId = session.client_id;
     await uploadEsignPdf(session.client_id, pdf, `${loanNumber}-loan-agreement.pdf`);
     console.log(`[eSign] Sent loan ${loanNumber} for signing (${pageCount} pages, client_id ${session.client_id})`);
-    if (logValues) {
-      console.log(`[eSign] Surepass asked to email ${values.email} (mobile ${values.phone}) with send_email and always_send_email on`);
-    }
 
-    // The customer already has the signing link at this point, so a failed save is reported but doesn't fail the request
+    // The Surepass session is ready from here on, so failures below are reported but don't fail the request
     let clientIdSaved = false;
     try {
       clientIdSaved = await saveEsignClientId(loanNumber, session.client_id);
@@ -490,12 +399,25 @@ app.post("/api/esign/:loanNumber", async (req, res) => {
       console.error(`[eSign] Couldn't save client_id ${session.client_id} for loan ${loanNumber}: ${saveError?.message || saveError}`);
     }
 
+    // Surepass doesn't notify the signer, so we email the link. If this fails, retry with the resend-email route.
+    const expiresAt = getSigningLinkExpiry(session.token || session.url);
+    let emailSent = false;
+    try {
+      await sendSigningEmail(values, session.url, expiresAt);
+      emailSent = true;
+      console.log(`[eSign] Signing link for loan ${loanNumber} emailed${logValues ? ` to ${values.email}` : ""}`);
+    } catch (mailError: any) {
+      console.error(`[eSign] Couldn't email the signing link for loan ${loanNumber} (client_id ${session.client_id}): ${mailError?.message || mailError}`);
+    }
+
     return res.json({
       success: true,
       loan_number: loanNumber,
       client_id: session.client_id,
       client_id_saved: clientIdSaved,
+      email_sent: emailSent,
       url: session.url,
+      expires_at: expiresAt?.toISOString() ?? null,
     });
   } catch (error: any) {
     // A client_id here means the session exists (and may have been emailed) but has no PDF
@@ -514,6 +436,75 @@ app.post("/api/esign/:loanNumber", async (req, res) => {
     };
 
     return res.status(500).json({ success: false, stage, client_id: clientId, errorCode: error?.code || null, error: errorMessages[stage] });
+  }
+});
+
+// Re-sends the signing email for a session that already exists. Body: { "url": "<url from POST /api/esign/:loanNumber>" }.
+// The link isn't stored on our side, so the caller passes it back; a new session needs POST /api/esign/:loanNumber instead.
+app.post("/api/esign/:loanNumber/resend-email", async (req, res) => {
+  let stage: "db" | "email" | "other" = "other";
+
+  try {
+    if (!hasValidApiKey(req)) {
+      return res.status(401).json({ success: false, error: "A valid x-api-key header is required." });
+    }
+
+    const loanNumber = req.params.loanNumber.trim();
+    if (!/^[A-Za-z0-9_-]+$/.test(loanNumber)) {
+      return res.status(400).json({ success: false, error: "A valid loan number is required (letters, numbers, - or _)." });
+    }
+
+    const signingUrl = String(req.body?.url || "").trim();
+    if (!isSurepassSigningUrl(signingUrl)) {
+      return res.status(400).json({ success: false, error: "Body must include the Surepass signing url returned when the agreement was sent." });
+    }
+
+    const expiresAt = getSigningLinkExpiry(signingUrl);
+    if (expiresAt && expiresAt.getTime() <= Date.now()) {
+      return res.status(410).json({
+        success: false,
+        error: "This signing link has expired. Send the agreement again with POST /api/esign/:loanNumber to create a new one.",
+      });
+    }
+
+    const missingConfig = [
+      !isDbConfigured() && "database settings (DB_HOST, DB_USER, DB_NAME, DB_TABLE)",
+      !isSmtpConfigured() && "SMTP settings (SMTP_HOST, SMTP_USER, SMTP_PASS)",
+    ].filter(Boolean);
+    if (missingConfig.length > 0) {
+      return res.status(500).json({ success: false, error: `eSign email is not configured on the server. Missing: ${missingConfig.join(", ")}.` });
+    }
+
+    stage = "db";
+    const [customer, loan] = await Promise.all([getLeadByLoanNumber(loanNumber), getLoanDetails(loanNumber)]);
+    if (!customer || !loan) {
+      return res.status(404).json({
+        success: false,
+        error: `No ${!customer ? "customer" : "loan details"} found for loan number ${loanNumber}.`
+      });
+    }
+    if (!customer.esign_client_id) {
+      return res.status(409).json({ success: false, error: `Loan ${loanNumber} hasn't been sent for eSign yet.` });
+    }
+
+    const { values, missing } = buildAgreementValues(customer, loan);
+    if (missing.length > 0) {
+      return res.status(422).json({ success: false, error: `Missing or invalid values for the email: ${missing.join(", ")}.` });
+    }
+
+    stage = "email";
+    await sendSigningEmail(values, signingUrl, expiresAt);
+    console.log(`[eSign] Signing link for loan ${loanNumber} re-sent (client_id ${customer.esign_client_id})`);
+
+    return res.json({ success: true, loan_number: loanNumber, email_sent: true, expires_at: expiresAt?.toISOString() ?? null });
+  } catch (error: any) {
+    console.error(`Error re-sending eSign email (stage: ${stage}):`, error?.message || error);
+    const errorMessages = {
+      db: "We couldn't read the loan details right now. Please try again in a few minutes.",
+      email: "We couldn't send the email. Please check the SMTP settings and try again.",
+      other: "An internal server error occurred. Please try again later.",
+    };
+    return res.status(500).json({ success: false, stage, errorCode: error?.code || null, error: errorMessages[stage] });
   }
 });
 

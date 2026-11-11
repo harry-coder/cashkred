@@ -25,7 +25,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var import_express = __toESM(require("express"), 1);
 var import_path3 = __toESM(require("path"), 1);
 var import_vite = require("vite");
-var import_nodemailer = __toESM(require("nodemailer"), 1);
 var import_dotenv = __toESM(require("dotenv"), 1);
 var import_multer = __toESM(require("multer"), 1);
 var import_crypto = __toESM(require("crypto"), 1);
@@ -329,7 +328,8 @@ async function initializeEsign(signer, positions, reason) {
   return callSurepass("/api/v1/esign/initialize", {
     // Our server uploads the PDF right after this call; the signer never uploads anything
     pdf_pre_uploaded: true,
-    send_email: true,
+    // Surepass doesn't email or SMS the signer; our server emails the signing link itself
+    send_email: false,
     sign_type: "aadhaar",
     config: {
       positions,
@@ -337,8 +337,6 @@ async function initializeEsign(signer, positions, reason) {
       allow_download: true,
       skip_otp: false,
       skip_email: false,
-      // send_email alone didn't deliver on production; this forces Surepass to email the signer
-      always_send_email: true,
       name_match: { match: true, score: 80 },
       // Not in Surepass's guide but in their API reference: no virtual signatures, no changing the mobile
       accept_virtual_sign: false,
@@ -372,6 +370,305 @@ async function uploadEsignPdf(clientId, pdf, fileName) {
 }
 async function getSignedDocument(clientId) {
   return callSurepass(`/api/v1/esign/get-signed-document/${encodeURIComponent(clientId)}`);
+}
+
+// mailer.ts
+var import_nodemailer = __toESM(require("nodemailer"), 1);
+function getSmtpSettings() {
+  return {
+    host: (process.env.SMTP_HOST || process.env.SMTP_SERVER || "").trim(),
+    port: (process.env.SMTP_PORT || "587").trim(),
+    user: (process.env.SMTP_USER || process.env.SMTP_USERNAME || "").trim(),
+    pass: (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim(),
+    allowSelfSigned: (process.env.SMTP_ALLOW_SELF_SIGNED || "false").trim().toLowerCase() === "true",
+    debug: (process.env.SMTP_DEBUG || "false").trim().toLowerCase() === "true"
+  };
+}
+function isSmtpConfigured() {
+  const { host, user, pass } = getSmtpSettings();
+  return !!(host && user && pass);
+}
+function getSenderAddress() {
+  return getSmtpSettings().user;
+}
+function logSmtpConfig() {
+  const smtp = getSmtpSettings();
+  const configured = isSmtpConfigured();
+  console.log(`SMTP Configured: ${configured ? "Yes" : "No"}`);
+  if (!configured) {
+    console.log(
+      `[SMTP Debug] Missing values -> host:${smtp.host ? "set" : "missing"}, user:${smtp.user ? "set" : "missing"}, pass:${smtp.pass ? "set" : "missing"}`
+    );
+  }
+  if (smtp.allowSelfSigned) {
+    console.log("[SMTP Warning] SMTP_ALLOW_SELF_SIGNED=true. TLS certificate verification is relaxed.");
+  }
+  if (smtp.debug) {
+    console.log("[SMTP Debug] Verbose SMTP protocol logs enabled (SMTP_DEBUG=true).");
+  }
+}
+function getNotificationEmails() {
+  const notificationEmails = (process.env.NOTIFICATION_EMAIL || "applications@cashkred.com").split(/[,;\n]+/).map((emailAddress) => emailAddress.trim()).filter(Boolean);
+  const invalidNotificationEmails = notificationEmails.filter(
+    (emailAddress) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress)
+  );
+  if (notificationEmails.length === 0 || invalidNotificationEmails.length > 0) {
+    throw new Error(
+      `Invalid NOTIFICATION_EMAIL value. Check these addresses: ${invalidNotificationEmails.join(", ") || "none provided"}`
+    );
+  }
+  return notificationEmails;
+}
+async function sendMail(message) {
+  const smtp = getSmtpSettings();
+  const primaryPort = Number(smtp.port);
+  const smtpAttempts = [
+    { port: primaryPort, secure: primaryPort === 465, label: "primary" },
+    { port: 587, secure: false, label: "fallback-starttls" },
+    { port: 465, secure: true, label: "fallback-ssl" }
+  ].filter(
+    (attempt, index, arr) => Number.isFinite(attempt.port) && arr.findIndex((a) => a.port === attempt.port && a.secure === attempt.secure) === index
+  );
+  let lastSmtpError;
+  for (const attempt of smtpAttempts) {
+    try {
+      console.log(
+        `[SMTP] Attempt ${attempt.label}: host=${smtp.host}, port=${attempt.port}, secure=${attempt.secure ? "true" : "false"}`
+      );
+      const transporter = import_nodemailer.default.createTransport({
+        host: smtp.host,
+        port: attempt.port,
+        secure: attempt.secure,
+        requireTLS: !attempt.secure,
+        auth: {
+          user: smtp.user,
+          pass: smtp.pass
+        },
+        logger: smtp.debug,
+        debug: smtp.debug,
+        connectionTimeout: 15e3,
+        greetingTimeout: 1e4,
+        socketTimeout: 2e4,
+        tls: {
+          minVersion: "TLSv1.2",
+          servername: smtp.host,
+          rejectUnauthorized: !smtp.allowSelfSigned
+        }
+      });
+      await transporter.verify();
+      await transporter.sendMail(message);
+      return;
+    } catch (smtpError) {
+      lastSmtpError = smtpError;
+      console.error(
+        `[SMTP] Attempt ${attempt.label} failed (${smtpError?.code || "UNKNOWN"}): ${smtpError?.message || smtpError}`
+      );
+      if ((smtpError?.message || "").toLowerCase().includes("self-signed certificate") && !smtp.allowSelfSigned) {
+        console.error("[SMTP Hint] If your provider/network uses a self-signed chain, set SMTP_ALLOW_SELF_SIGNED=true in .env.");
+      }
+    }
+  }
+  throw lastSmtpError;
+}
+
+// esign-email.ts
+var SUPPORT_EMAIL = "support@cashkred.com";
+var SUPPORT_PHONE = "9220109924";
+var COMPANY_ADDRESS = "Daksh Lefins Limited, 207 Second Floor, Allied House, Inderlok, New Delhi 110035";
+function isSurepassSigningUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && /(^|\.)surepass\.(io|app)$/.test(url.hostname);
+  } catch {
+    return false;
+  }
+}
+function getSigningLinkExpiry(tokenOrUrl) {
+  for (const candidate of tokenOrUrl.match(/[\w-]+\.[\w-]+\.[\w-]+/g) || []) {
+    try {
+      const claims = JSON.parse(Buffer.from(candidate.split(".")[1], "base64url").toString("utf8"));
+      if (typeof claims?.exp === "number") return new Date(claims.exp * 1e3);
+    } catch {
+    }
+  }
+  return null;
+}
+function formatExpiry(date) {
+  const formatted = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  }).format(date);
+  return `${formatted} IST`;
+}
+function escapeHtml(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function maskPan(pan) {
+  return pan.length > 4 ? `${"X".repeat(pan.length - 4)}${pan.slice(-4)}` : pan;
+}
+function loanRows(values) {
+  return [
+    ["Loan number", values.applicationId],
+    ["Loan amount", values.principal],
+    ["Rate of interest", values.interestRate],
+    ["Processing fee", values.processingFee],
+    ["GST on processing fee", values.gst],
+    ["Amount to be disbursed", values.disbursedAmount],
+    ["Tenure", values.tenure],
+    ["Repayment date", values.repaymentDate],
+    ["Total repayment amount", values.repaymentAmount]
+  ];
+}
+function borrowerRows(values) {
+  return [
+    ["Name", values.borrowerName],
+    ["Mobile", values.phone],
+    ["Email", values.email],
+    ["PAN", maskPan(values.pan)]
+  ];
+}
+var SIGNING_STEPS = [
+  "Open the signing link and read the full loan agreement.",
+  "Enter your Aadhaar number when asked.",
+  "Enter the OTP sent by UIDAI to the mobile number linked with your Aadhaar.",
+  "Confirm to sign. You can download the signed copy at the end."
+];
+function htmlTable(title, rows, highlightLast = false) {
+  const body = rows.map(([label, value], index) => {
+    const strong = highlightLast && index === rows.length - 1;
+    return `
+              <tr>
+                <td style="padding: 10px 16px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 14px; width: 50%;">${escapeHtml(label)}</td>
+                <td style="padding: 10px 16px; border-top: 1px solid #e2e8f0; color: #0f172a; font-size: 14px; font-weight: ${strong ? 700 : 600}; text-align: right;">${escapeHtml(value)}</td>
+              </tr>`;
+  }).join("");
+  return `
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #e2e8f0; border-radius: 8px; border-collapse: separate; margin: 0 0 24px;">
+              <tr>
+                <td colspan="2" style="padding: 12px 16px; background-color: #f8fafc; color: #1e3a8a; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; border-radius: 8px 8px 0 0;">${escapeHtml(title)}</td>
+              </tr>${body}
+            </table>`;
+}
+function buildSigningEmail(values, signingUrl, expiresAt) {
+  const firstName = values.borrowerName.split(" ")[0];
+  const expiryText = expiresAt ? `This link is valid until ${formatExpiry(expiresAt)}.` : "";
+  const url = escapeHtml(signingUrl);
+  const subject = `Action required: Sign your CashKred loan agreement (${values.applicationId})`;
+  const html = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(subject)}</title>
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: Arial, Helvetica, sans-serif;">
+    <div style="display: none; max-height: 0; overflow: hidden;">Your loan of ${escapeHtml(values.principal)} is ready. Sign the agreement online with Aadhaar eSign.</div>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 24px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden;">
+            <tr>
+              <td style="background-color: #1e40af; padding: 24px 32px;">
+                <div style="color: #ffffff; font-size: 24px; font-weight: 700; letter-spacing: 0.5px;">CashKred</div>
+                <div style="color: #bfdbfe; font-size: 13px; margin-top: 4px;">Loan agreement for signature</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 32px;">
+                <p style="margin: 0 0 16px; color: #0f172a; font-size: 16px;">Dear ${escapeHtml(firstName)},</p>
+                <p style="margin: 0 0 16px; color: #334155; font-size: 15px; line-height: 1.6;">
+                  Your loan of <strong>${escapeHtml(values.principal)}</strong> (loan number <strong>${escapeHtml(values.applicationId)}</strong>) is ready.
+                  The last step is to sign your loan agreement online using Aadhaar eSign. It takes about 2 minutes.
+                </p>
+                <p style="margin: 0 0 24px; color: #334155; font-size: 15px; line-height: 1.6;">
+                  Please check the details below. If anything is wrong, don't sign; contact us instead.
+                </p>
+
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 auto 12px;">
+                  <tr>
+                    <td align="center" style="border-radius: 8px; background-color: #2563eb;">
+                      <a href="${url}" target="_blank" rel="noopener" style="display: inline-block; padding: 14px 36px; color: #ffffff; font-size: 16px; font-weight: 700; text-decoration: none; border-radius: 8px;">Review &amp; Sign Agreement</a>
+                    </td>
+                  </tr>
+                </table>
+                ${expiryText ? `<p style="margin: 0 0 28px; color: #64748b; font-size: 13px; text-align: center;">${escapeHtml(expiryText)}</p>` : `<div style="height: 16px;"></div>`}
+${htmlTable("Loan details", loanRows(values), true)}
+${htmlTable("Your details", borrowerRows(values))}
+                <div style="margin: 0 0 24px; padding: 16px 20px; background-color: #eff6ff; border-radius: 8px;">
+                  <div style="color: #1e3a8a; font-size: 14px; font-weight: 700; margin-bottom: 8px;">How to sign</div>
+                  <ol style="margin: 0; padding-left: 20px; color: #334155; font-size: 14px; line-height: 1.7;">
+                    ${SIGNING_STEPS.map((step) => `<li>${escapeHtml(step)}</li>`).join("\n                    ")}
+                  </ol>
+                  <div style="color: #475569; font-size: 13px; margin-top: 10px; line-height: 1.5;">
+                    The name on your Aadhaar must match <strong>${escapeHtml(values.borrowerName)}</strong>. Keep the phone linked with your Aadhaar handy for the OTP.
+                  </div>
+                </div>
+
+                <p style="margin: 0 0 8px; color: #64748b; font-size: 13px;">If the button doesn't work, copy this link into your browser:</p>
+                <p style="margin: 0 0 24px; font-size: 13px; word-break: break-all;"><a href="${url}" target="_blank" rel="noopener" style="color: #2563eb;">${url}</a></p>
+
+                <div style="padding: 14px 16px; border-left: 4px solid #f59e0b; background-color: #fffbeb; color: #78350f; font-size: 13px; line-height: 1.5;">
+                  <strong>Stay safe:</strong> this link is only for you, so don't forward it. CashKred will never ask for your OTP, Aadhaar number or passwords by phone, SMS or email.
+                  If you didn't apply for this loan, contact us right away.
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 20px 32px; background-color: #f8fafc; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 12px; line-height: 1.6;">
+                Need help? Email <a href="mailto:${SUPPORT_EMAIL}" style="color: #2563eb;">${SUPPORT_EMAIL}</a> or call ${SUPPORT_PHONE}.<br>
+                ${escapeHtml(COMPANY_ADDRESS)}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+  const textRows = (rows) => rows.map(([label, value]) => `  ${label}: ${value}`).join("\n");
+  const text2 = [
+    `Dear ${firstName},`,
+    "",
+    `Your loan of ${values.principal} (loan number ${values.applicationId}) is ready. The last step is to sign your loan agreement online using Aadhaar eSign.`,
+    "Please check the details below. If anything is wrong, don't sign; contact us instead.",
+    "",
+    "Review and sign your agreement here:",
+    signingUrl,
+    expiryText,
+    "",
+    "LOAN DETAILS",
+    textRows(loanRows(values)),
+    "",
+    "YOUR DETAILS",
+    textRows(borrowerRows(values)),
+    "",
+    "HOW TO SIGN",
+    ...SIGNING_STEPS.map((step, index) => `  ${index + 1}. ${step}`),
+    `The name on your Aadhaar must match ${values.borrowerName}.`,
+    "",
+    "Stay safe: this link is only for you, so don't forward it. CashKred will never ask for your OTP, Aadhaar number or passwords by phone, SMS or email. If you didn't apply for this loan, contact us right away.",
+    "",
+    `Need help? Email ${SUPPORT_EMAIL} or call ${SUPPORT_PHONE}.`,
+    COMPANY_ADDRESS
+  ].filter((line, index, lines) => !(line === "" && lines[index - 1] === "")).join("\n");
+  return { subject, html, text: text2 };
+}
+async function sendSigningEmail(values, signingUrl, expiresAt) {
+  const { subject, html, text: text2 } = buildSigningEmail(values, signingUrl, expiresAt);
+  await sendMail({
+    from: `"CashKred" <${getSenderAddress()}>`,
+    to: values.email,
+    bcc: getNotificationEmails().join(", "),
+    replyTo: SUPPORT_EMAIL,
+    subject,
+    html,
+    text: text2
+  });
 }
 
 // server.ts
@@ -569,34 +866,8 @@ app.post("/api/apply", async (req, res) => {
         </div>
       </div>
     `;
-    const smtpHost = (process.env.SMTP_HOST || process.env.SMTP_SERVER || "").trim();
-    const smtpPort = (process.env.SMTP_PORT || "587").trim();
-    const smtpUser = (process.env.SMTP_USER || process.env.SMTP_USERNAME || "").trim();
-    const smtpPass = (process.env.SMTP_PASS || process.env.SMTP_PASSWORD || "").trim();
-    const allowSelfSigned = (process.env.SMTP_ALLOW_SELF_SIGNED || "false").trim().toLowerCase() === "true";
-    const smtpDebug = (process.env.SMTP_DEBUG || "false").trim().toLowerCase() === "true";
-    const notificationEmails = (process.env.NOTIFICATION_EMAIL || "applications@cashkred.com").split(/[,;\n]+/).map((emailAddress) => emailAddress.trim()).filter(Boolean);
-    const invalidNotificationEmails = notificationEmails.filter(
-      (emailAddress) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailAddress)
-    );
-    if (notificationEmails.length === 0 || invalidNotificationEmails.length > 0) {
-      throw new Error(
-        `Invalid NOTIFICATION_EMAIL value. Check these addresses: ${invalidNotificationEmails.join(", ") || "none provided"}`
-      );
-    }
-    const isSmtpConfigured = !!(smtpHost && smtpUser && smtpPass);
-    console.log(`SMTP Configured: ${isSmtpConfigured ? "Yes" : "No"}`);
-    if (!isSmtpConfigured) {
-      console.log(
-        `[SMTP Debug] Missing values -> host:${smtpHost ? "set" : "missing"}, user:${smtpUser ? "set" : "missing"}, pass:${smtpPass ? "set" : "missing"}`
-      );
-    }
-    if (allowSelfSigned) {
-      console.log("[SMTP Warning] SMTP_ALLOW_SELF_SIGNED=true. TLS certificate verification is relaxed.");
-    }
-    if (smtpDebug) {
-      console.log("[SMTP Debug] Verbose SMTP protocol logs enabled (SMTP_DEBUG=true).");
-    }
+    const notificationEmails = getNotificationEmails();
+    logSmtpConfig();
     console.log("------------------ NEW APPLICATION ------------------");
     console.log(`Full Name: ${fullName}`);
     console.log(`Phone: ${phone}`);
@@ -609,65 +880,14 @@ app.post("/api/apply", async (req, res) => {
     console.log(`Company: ${companyName}, Designation: ${designation}`);
     console.log(`Bank: ${bankName}, A/C: ${accountNumber}, IFSC: ${ifscCode}`);
     console.log("-----------------------------------------------------");
-    if (isSmtpConfigured) {
+    if (isSmtpConfigured()) {
       stage = "email";
-      const primaryPort = Number(smtpPort);
-      const smtpAttempts = [
-        { port: primaryPort, secure: primaryPort === 465, label: "primary" },
-        { port: 587, secure: false, label: "fallback-starttls" },
-        { port: 465, secure: true, label: "fallback-ssl" }
-      ].filter(
-        (attempt, index, arr) => Number.isFinite(attempt.port) && arr.findIndex((a) => a.port === attempt.port && a.secure === attempt.secure) === index
-      );
-      let sent = false;
-      let lastSmtpError;
-      for (const attempt of smtpAttempts) {
-        try {
-          console.log(
-            `[SMTP] Attempt ${attempt.label}: host=${smtpHost}, port=${attempt.port}, secure=${attempt.secure ? "true" : "false"}`
-          );
-          const transporter = import_nodemailer.default.createTransport({
-            host: smtpHost,
-            port: attempt.port,
-            secure: attempt.secure,
-            requireTLS: !attempt.secure,
-            auth: {
-              user: smtpUser,
-              pass: smtpPass
-            },
-            logger: smtpDebug,
-            debug: smtpDebug,
-            connectionTimeout: 15e3,
-            greetingTimeout: 1e4,
-            socketTimeout: 2e4,
-            tls: {
-              minVersion: "TLSv1.2",
-              servername: smtpHost,
-              rejectUnauthorized: !allowSelfSigned
-            }
-          });
-          await transporter.verify();
-          await transporter.sendMail({
-            from: `"${fullName} via CashKred" <${smtpUser}>`,
-            to: notificationEmails.join(", "),
-            subject: `\u{1F6A8} [New Application] - \u20B9${Number(loanAmount).toLocaleString("en-IN")} requested by ${fullName}`,
-            html: emailHtml
-          });
-          sent = true;
-          break;
-        } catch (smtpError) {
-          lastSmtpError = smtpError;
-          console.error(
-            `[SMTP] Attempt ${attempt.label} failed (${smtpError?.code || "UNKNOWN"}): ${smtpError?.message || smtpError}`
-          );
-          if ((smtpError?.message || "").toLowerCase().includes("self-signed certificate") && !allowSelfSigned) {
-            console.error("[SMTP Hint] If your provider/network uses a self-signed chain, set SMTP_ALLOW_SELF_SIGNED=true in .env.");
-          }
-        }
-      }
-      if (!sent) {
-        throw lastSmtpError;
-      }
+      await sendMail({
+        from: `"${fullName} via CashKred" <${getSenderAddress()}>`,
+        to: notificationEmails.join(", "),
+        subject: `\u{1F6A8} [New Application] - \u20B9${Number(loanAmount).toLocaleString("en-IN")} requested by ${fullName}`,
+        html: emailHtml
+      });
       return res.json({
         success: true,
         smtpConfigured: true,
@@ -743,7 +963,9 @@ app.post("/api/esign/:loanNumber", async (req, res) => {
     const missingConfig = [
       !isDbConfigured() && "database settings (DB_HOST, DB_USER, DB_NAME, DB_TABLE)",
       !isSurepassConfigured() && "SUREPASS_TOKEN",
-      !import_fs2.default.existsSync(templatePath) && "agreement template PDF"
+      !import_fs2.default.existsSync(templatePath) && "agreement template PDF",
+      // We email the signing link ourselves, so don't create a session we can't deliver
+      !isSmtpConfigured() && "SMTP settings (SMTP_HOST, SMTP_USER, SMTP_PASS)"
     ].filter(Boolean);
     if (missingConfig.length > 0) {
       console.error(`[eSign] Not configured. Missing: ${missingConfig.join(", ")}. Template path checked: ${templatePath}`);
@@ -777,9 +999,6 @@ ${JSON.stringify(values, null, 2)}`);
     clientId = session.client_id;
     await uploadEsignPdf(session.client_id, pdf, `${loanNumber}-loan-agreement.pdf`);
     console.log(`[eSign] Sent loan ${loanNumber} for signing (${pageCount} pages, client_id ${session.client_id})`);
-    if (logValues) {
-      console.log(`[eSign] Surepass asked to email ${values.email} (mobile ${values.phone}) with send_email and always_send_email on`);
-    }
     let clientIdSaved = false;
     try {
       clientIdSaved = await saveEsignClientId(loanNumber, session.client_id);
@@ -787,12 +1006,23 @@ ${JSON.stringify(values, null, 2)}`);
     } catch (saveError) {
       console.error(`[eSign] Couldn't save client_id ${session.client_id} for loan ${loanNumber}: ${saveError?.message || saveError}`);
     }
+    const expiresAt = getSigningLinkExpiry(session.token || session.url);
+    let emailSent = false;
+    try {
+      await sendSigningEmail(values, session.url, expiresAt);
+      emailSent = true;
+      console.log(`[eSign] Signing link for loan ${loanNumber} emailed${logValues ? ` to ${values.email}` : ""}`);
+    } catch (mailError) {
+      console.error(`[eSign] Couldn't email the signing link for loan ${loanNumber} (client_id ${session.client_id}): ${mailError?.message || mailError}`);
+    }
     return res.json({
       success: true,
       loan_number: loanNumber,
       client_id: session.client_id,
       client_id_saved: clientIdSaved,
-      url: session.url
+      email_sent: emailSent,
+      url: session.url,
+      expires_at: expiresAt?.toISOString() ?? null
     });
   } catch (error) {
     console.error(`Error sending agreement for eSign (stage: ${stage}${clientId ? `, client_id ${clientId}` : ""}):`, error?.message || error);
@@ -806,6 +1036,63 @@ ${JSON.stringify(values, null, 2)}`);
       other: "An internal server error occurred. Please try again later."
     };
     return res.status(500).json({ success: false, stage, client_id: clientId, errorCode: error?.code || null, error: errorMessages[stage] });
+  }
+});
+app.post("/api/esign/:loanNumber/resend-email", async (req, res) => {
+  let stage = "other";
+  try {
+    if (!hasValidApiKey(req)) {
+      return res.status(401).json({ success: false, error: "A valid x-api-key header is required." });
+    }
+    const loanNumber = req.params.loanNumber.trim();
+    if (!/^[A-Za-z0-9_-]+$/.test(loanNumber)) {
+      return res.status(400).json({ success: false, error: "A valid loan number is required (letters, numbers, - or _)." });
+    }
+    const signingUrl = String(req.body?.url || "").trim();
+    if (!isSurepassSigningUrl(signingUrl)) {
+      return res.status(400).json({ success: false, error: "Body must include the Surepass signing url returned when the agreement was sent." });
+    }
+    const expiresAt = getSigningLinkExpiry(signingUrl);
+    if (expiresAt && expiresAt.getTime() <= Date.now()) {
+      return res.status(410).json({
+        success: false,
+        error: "This signing link has expired. Send the agreement again with POST /api/esign/:loanNumber to create a new one."
+      });
+    }
+    const missingConfig = [
+      !isDbConfigured() && "database settings (DB_HOST, DB_USER, DB_NAME, DB_TABLE)",
+      !isSmtpConfigured() && "SMTP settings (SMTP_HOST, SMTP_USER, SMTP_PASS)"
+    ].filter(Boolean);
+    if (missingConfig.length > 0) {
+      return res.status(500).json({ success: false, error: `eSign email is not configured on the server. Missing: ${missingConfig.join(", ")}.` });
+    }
+    stage = "db";
+    const [customer, loan] = await Promise.all([getLeadByLoanNumber(loanNumber), getLoanDetails(loanNumber)]);
+    if (!customer || !loan) {
+      return res.status(404).json({
+        success: false,
+        error: `No ${!customer ? "customer" : "loan details"} found for loan number ${loanNumber}.`
+      });
+    }
+    if (!customer.esign_client_id) {
+      return res.status(409).json({ success: false, error: `Loan ${loanNumber} hasn't been sent for eSign yet.` });
+    }
+    const { values, missing } = buildAgreementValues(customer, loan);
+    if (missing.length > 0) {
+      return res.status(422).json({ success: false, error: `Missing or invalid values for the email: ${missing.join(", ")}.` });
+    }
+    stage = "email";
+    await sendSigningEmail(values, signingUrl, expiresAt);
+    console.log(`[eSign] Signing link for loan ${loanNumber} re-sent (client_id ${customer.esign_client_id})`);
+    return res.json({ success: true, loan_number: loanNumber, email_sent: true, expires_at: expiresAt?.toISOString() ?? null });
+  } catch (error) {
+    console.error(`Error re-sending eSign email (stage: ${stage}):`, error?.message || error);
+    const errorMessages = {
+      db: "We couldn't read the loan details right now. Please try again in a few minutes.",
+      email: "We couldn't send the email. Please check the SMTP settings and try again.",
+      other: "An internal server error occurred. Please try again later."
+    };
+    return res.status(500).json({ success: false, stage, errorCode: error?.code || null, error: errorMessages[stage] });
   }
 });
 app.get("/api/esign/:clientId/signed-document", async (req, res) => {
